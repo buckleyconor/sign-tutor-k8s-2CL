@@ -11,9 +11,23 @@ from pathlib import Path
 # Allow `python training/export_onnx.py ...` (script form) to resolve packages.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import onnx
 import torch
 
 from training.model_one_hand import OneHandClassifier
+
+
+def _consolidate(output: Path) -> None:
+    """Force a single self-contained ONNX (no external-data sidecar).
+
+    Recent torch exporters externalise weights into `<model>.onnx.data`, but our
+    delivery path (ConfigMap -> Triton init container) ships only the .onnx, so
+    the weights must be embedded. Re-save inline and remove any sidecar.
+    """
+    model = onnx.load(str(output), load_external_data=True)
+    onnx.save_model(model, str(output), save_as_external_data=False)
+    for sidecar in output.parent.glob(output.name + "*.data"):
+        sidecar.unlink()
 
 
 def export(checkpoint: Path, output: Path) -> None:
@@ -31,7 +45,8 @@ def export(checkpoint: Path, output: Path) -> None:
         dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
         opset_version=17,
     )
-    print(f"Exported {checkpoint} -> {output} ({num_classes} classes)")
+    _consolidate(output)
+    print(f"Exported {checkpoint} -> {output} ({num_classes} classes, self-contained)")
 
 
 def main():

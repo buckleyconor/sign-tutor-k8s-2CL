@@ -1,6 +1,8 @@
 # Runtime dependencies. In production these come from the NVIDIA PyTorch base
 # image (torch, tensorrt) plus the pip installs in the Dockerfile.
-mediapipe
+# Pinned: mediapipe >=0.10.19 dropped the legacy `mp.solutions.hands` API the
+# code uses (only the Tasks API remains). 0.10.18 also constrains numpy<2.
+mediapipe==0.10.18
 opencv-python-headless
 gradio
 tritonclient[http,grpc]

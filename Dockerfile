@@ -3,7 +3,7 @@
 FROM nvcr.io/nvidia/pytorch:25.03-py3
 
 RUN pip install --no-cache-dir \
-    mediapipe \
+    "mediapipe==0.10.18" \
     opencv-python-headless \
     gradio \
     tritonclient[http,grpc] \
