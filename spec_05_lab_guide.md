@@ -155,7 +155,7 @@ MediaPipe processes each image and writes one CSV row per successfully detected 
 wc -l datasets/isl_landmarks.csv
 ```
 
-Expect 600–850 rows (not all ~910 images will yield a detection).
+Expect around **870 rows** out of the 882 frames — MediaPipe detects a hand in ~99% of these clean, background-removed images, skipping only a handful. Anything above ~600 is fine to proceed.
 
 ### 2.3 Verify data quality
 
@@ -163,7 +163,7 @@ Expect 600–850 rows (not all ~910 images will yield a detection).
 python training/check_quality.py datasets/isl_landmarks.csv 63
 ```
 
-This checks that the feature dimension is correct (63) and that the class distribution is not severely imbalanced. You may see a warning about having only one source — this is expected for a single pre-collected dataset and is acceptable here.
+This checks that the feature dimension is correct (63) and that the class distribution is not severely imbalanced. You may see **two warnings** — a class-imbalance one (the dynamic letters X and Z have fewer clean static frames, so the min/max ratio dips just under the threshold) and a single-source one. Both are expected for this one pre-collected dataset and are acceptable here; the check still reports `Data quality: OK`.
 
 > ✅ **Checkpoint:** You have a `datasets/isl_landmarks.csv` file with ISL landmark data.
 
@@ -183,7 +183,7 @@ Look at the augmentation module:
 cat training/augment.py
 ```
 
-Unlike image-space augmentation (which would use a library like NVIDIA DALI to apply transforms to pixels), this pipeline augments in *landmark space* — directly perturbing the 63-dimensional feature vectors at training time. Three operations are applied to each training sample:
+Unlike image-space augmentation (which would use a library like NVIDIA DALI to apply transforms to pixels), this pipeline augments in *landmark space* — directly perturbing the 63-dimensional feature vectors at training time. Two operations are applied to each training sample by default (a third, mirror flip, is opt-in — see below):
 
 | Operation | Effect | Rationale |
 |---|---|---|
@@ -399,7 +399,7 @@ The language dropdown lists both American Sign Language and Irish Sign Language 
 
 ### 8.2 Sign a few letters
 
-Use the reference image as guidance. Hold each sign clearly and steadily for 1–2 seconds. The quality bar should rise as the model's confidence grows — the bar only turns green when the model consistently predicts the target letter above the 90% confidence threshold.
+Use the reference image as guidance. Hold each sign clearly and steadily for 1–2 seconds. The quality bar should rise as the model's confidence grows — the bar only turns green when the model consistently predicts the target letter above the **80%** confidence threshold (the green cutoff in `configs/thresholds.yaml`).
 
 > 💡 **Tip:** The smoother accumulates predictions over 15 frames (about 3 seconds at the streaming rate). Hold the sign steady rather than moving — the system is looking for consistency, not speed.
 
