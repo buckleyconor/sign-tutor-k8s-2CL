@@ -10,7 +10,11 @@ images are processed once; the resulting CSV is reused across training runs.
 """
 import argparse
 import csv
+import sys
 from pathlib import Path
+
+# Allow `python training/extract_landmarks.py ...` (script form) to resolve packages.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cv2
 

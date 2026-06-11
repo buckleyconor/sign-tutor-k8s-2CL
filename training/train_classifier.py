@@ -12,7 +12,12 @@ every sample.
 """
 import argparse
 import csv
+import sys
 from pathlib import Path
+
+# Allow `python training/train_classifier.py ...` (script form) to resolve the
+# `training`/`src` packages by putting the repo root on sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import pandas as pd

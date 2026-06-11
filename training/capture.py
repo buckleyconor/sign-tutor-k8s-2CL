@@ -7,8 +7,12 @@ only (no images), so there are no face-data privacy concerns.
 """
 import argparse
 import csv
+import sys
 import time
 from pathlib import Path
+
+# Allow `python training/capture.py ...` (script form) to resolve packages.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cv2
 

@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir \
     tritonclient[http,grpc] \
     pyyaml \
     pandas \
+    onnx onnxscript \
     pytest pytest-cov
 
 WORKDIR /app

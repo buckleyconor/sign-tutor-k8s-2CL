@@ -7,3 +7,6 @@ tritonclient[http,grpc]
 pyyaml
 pandas
 numpy
+# ONNX export (torch.onnx) — onnxscript is required by recent torch exporters.
+onnx
+onnxscript
