@@ -169,14 +169,14 @@ The development host I am running on has microk8s single node cluster where we c
 | Component | Status | Notes |
 |---|---|---|
 | MediaPipe Hands | ✅ OK | CPU-based. Pip install on Ubuntu 22.04/24.04 (x86_64) works. |
-| PyTorch (NVIDIA container) | ✅ OK | Use `nvcr.io/nvidia/pytorch:25.xx-py3` — Blackwell-optimised. Do not use generic pip wheels. |
-| TensorRT | ✅ OK | `trtexec` ships in both `tritonserver:26.04-py3` **and** the `nvcr.io/nvidia/pytorch:25.xx-py3` tutor-app base, so the lab builds engines locally in the tutor-app pod. Target: sm_120 (RTX PRO 6000 Blackwell). **Requires a TRT 10.16+ image** — TRT 10.9 (25.03) fails at engine build time on Blackwell. The pre-bundled ASL engine is built at pod startup by the Triton init container; the ISL engine is built by the participant during the lab. |
+| PyTorch (NVIDIA container) | ✅ OK | Use the `nvcr.io/nvidia/pytorch` tag whose TensorRT **matches the Triton image** (e.g. **`26.04` ↔ `tritonserver:26.04`, both TRT 10.16.1**) — see the TensorRT row for why. Blackwell-optimised; do not use generic pip wheels. |
+| TensorRT | ✅ OK | `trtexec` ships in both `tritonserver:26.04-py3` **and** the matching `nvcr.io/nvidia/pytorch:26.04-py3` tutor-app base (both TRT 10.16.1), so the lab builds engines locally in the tutor-app pod **and Triton can load them**. Target: sm_120 (RTX PRO 6000 Blackwell). **The builder's and server's TRT versions must match** — TRT engines are serialization-version-specific. An engine built by an *older* TRT (e.g. `pytorch:25.03` → TRT 10.9) still *builds* on Blackwell, but then fails to deserialize in a 10.16 Triton with `Serialization assertion … Version tag does not match`. The pre-bundled ASL engine is built at pod startup by the Triton init container; the ISL engine is built by the participant during the lab — both with TRT 10.16. |
 | Triton Inference Server | ✅ OK | Use `26.04-py3` (TRT 10.16.01) — confirmed working on RTX PRO 6000. Poll-mode hot-reload enabled (5 s interval). |
 | ONNX Runtime GPU | ✅ OK | Standard PyPI x86_64 wheel. Only needed for inference outside Triton. |
 | TAO Toolkit | Optional | Useful for image-based Module 2 experiments. For Module 1 (landmarks-only), direct PyTorch is simpler. |
 | OpenCV / Gradio | ✅ OK | Pure Python, no platform issues. |
 
-> **Engine portability note:** TensorRT engines are tied to GPU architecture. Both of our environments — the microk8s dev host and the Charmed Kubernetes production cluster — use **RTX PRO 6000 Blackwell (sm_120)**, so an engine built in dev runs unchanged in production. Portability only becomes a concern for *foreign* architectures: a `model.plan` built on sm_120 will **not** run on an H100 (sm_90) or a consumer 4090 (sm_89). The ONNX file is the portable artefact; rebuild the engine on each non-Blackwell target.
+> **Engine portability note:** TensorRT engines are tied to GPU architecture **and to the TensorRT version** (the builder and the serving runtime must use the same TRT — see §5.1). Both of our environments — the microk8s dev host and the Charmed Kubernetes production cluster — use **RTX PRO 6000 Blackwell (sm_120)**, so an engine built in dev runs unchanged in production. Portability only becomes a concern for *foreign* architectures: a `model.plan` built on sm_120 will **not** run on an H100 (sm_90) or a consumer 4090 (sm_89). The ONNX file is the portable artefact; rebuild the engine on each non-Blackwell target.
 
 ### 5.2 Kubernetes deployment strategy
 
@@ -185,7 +185,7 @@ The system deploys to Canonical Charmed Kubernetes as a **Helm chart**, with one
 Each namespace contains:
 
 - **triton** Deployment — `nvcr.io/nvidia/tritonserver:26.04-py3`. An init container runs `trtexec` at pod startup to compile ONNX → TensorRT engine for the cluster GPU (sm_120). The main container serves models with poll-mode hot-reload (5 s interval) on ports 8000 (HTTP) and 8001 (gRPC).
-- **tutor-app** Deployment — built from `nvcr.io/nvidia/pytorch:25.xx-py3`. Runs MediaPipe, the Gradio UI, and the lesson controller. Communicates with Triton over the in-namespace `triton` Service. Exposed via NGINX Ingress with TLS (`https://p1.lab.internal`).
+- **tutor-app** Deployment — built from `nvcr.io/nvidia/pytorch:26.04-py3` (TRT 10.16, matching Triton). Runs MediaPipe, the Gradio UI, and the lesson controller. Communicates with Triton over the in-namespace `triton` Service. Exposed via NGINX Ingress with TLS (`https://p1.lab.internal`).
 - **PersistentVolumeClaims** — `triton-models`, `languages`, `datasets`, `checkpoints`, and a read-only PVC for the shared ISL frames dataset. The `triton-models` PVC is the **shared model repository**: it is mounted **read-write in tutor-app** and read-only in the triton pod, so a TensorRT engine built in tutor-app appears directly in Triton's repository with no cross-pod copy. The StorageClass is parameterized in `values.yaml` (Ceph RBD on Charmed Kubernetes; the default `microk8s-hostpath` on the single-node dev host).
 
 Training, ONNX export, and the `trtexec` engine build all run **inside the tutor-app pod** — which is also where the embedded terminal executes — writing the finished engine and `config.pbtxt` straight onto the shared `triton-models` PVC. Triton picks them up automatically via poll mode. No `kubectl cp` or cross-pod `exec` is required.

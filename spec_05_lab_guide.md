@@ -273,7 +273,7 @@ ls -lh languages/isl/model.onnx
 
 This is the NVIDIA-specific optimisation step. TensorRT compiles the ONNX graph into a binary engine tailored to the target GPU's architecture. In this cluster, that target is `sm_120` (RTX PRO 6000 Blackwell).
 
-`trtexec` ships in this pod's PyTorch base image, and Triton's model repository is mounted **read-write** here at `/models` (the shared `triton-models` PVC). So you build the engine **straight into Triton's repository** — no copying between pods. First create the model-version directory, then build:
+`trtexec` ships in this pod's PyTorch base image — and crucially that base (`pytorch:26.04`) carries the **same TensorRT version as Triton** (10.16), so the engine you build here will load in Triton. Triton's model repository is mounted **read-write** here at `/models` (the shared `triton-models` PVC), so you build the engine **straight into Triton's repository** — no copying between pods. First create the model-version directory, then build:
 
 ```bash
 mkdir -p /models/isl_classifier/1
@@ -419,7 +419,7 @@ That sentence is worth re-reading. *Your* model, *your* engine, on the same infr
 | Training accuracy plateaus below 80% | Insufficient data diversity | Reduce `--val-split` to 0.1 and retrain; the pre-collected dataset is small by design |
 | `export_onnx.py` fails | Checkpoint path wrong | Verify `checkpoints/isl/best.pt` exists first: `ls checkpoints/isl/` |
 | `trtexec: command not found` | Engine build run somewhere without TensorRT | Run it in the embedded terminal (the tutor-app pod's PyTorch image bundles `trtexec`); if needed use the full path `/usr/src/tensorrt/bin/trtexec` |
-| `trtexec` fails with "no implementation" | Engine built against the wrong TRT version | The lab images are pinned to TRT 10.16+ for Blackwell; flag to the facilitator if you see this |
+| Triton logs `Version tag does not match` / model `UNAVAILABLE` after deploy | Engine built by a TRT version different from Triton's | The tutor-app and Triton images must share a TRT version (both 10.16 here). The engine builds fine but won't deserialize if they differ — flag to the facilitator |
 | Triton reports model as `UNAVAILABLE` | `config.pbtxt` missing/typo, or `model.plan` not in `1/` | Re-check `ls -la /models/isl_classifier/1/` and that `config.pbtxt` is at `/models/isl_classifier/config.pbtxt`; ask the facilitator to check `triton` pod logs |
 | Curl shows ISL not ready after 10s+ | Poll hasn't picked it up, or build incomplete | Confirm the `trtexec` output ended with `&&&& PASSED`; wait one more poll interval (5s) |
 | UI shows ISL but always "no hand detected" | Webcam permission denied | Check browser permissions; allow camera for `p1.lab.internal` |

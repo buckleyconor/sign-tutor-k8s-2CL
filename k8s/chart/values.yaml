@@ -7,7 +7,7 @@ host: p1.lab.internal          # Ingress host (TLS)
 storageClass: microk8s-hostpath
 
 images:
-  tutorApp: sign-tutor/tutor-app:0.3
+  tutorApp: sign-tutor/tutor-app:0.5
   triton: nvcr.io/nvidia/tritonserver:26.04-py3
   # tutor-app is imported into the node's containerd locally (no registry), so
   # never try to pull it.

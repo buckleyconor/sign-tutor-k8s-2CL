@@ -96,7 +96,9 @@ bash k8s/scripts/reset-participant.sh p1 p1.lab.internal
 ### 3.2 tutor-app Dockerfile
 
 ```dockerfile
-FROM nvcr.io/nvidia/pytorch:25.03-py3
+# TRT must match the Triton image (26.04 = TRT 10.16) so engines built in this
+# pod load in Triton. pytorch:25.03 (TRT 10.9) builds but won't deserialize there.
+FROM nvcr.io/nvidia/pytorch:26.04-py3
 RUN pip install --no-cache-dir \
     mediapipe \
     opencv-python-headless \
