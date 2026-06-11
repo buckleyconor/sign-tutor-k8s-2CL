@@ -1,0 +1,22 @@
+# Keep the image lean: bake code + languages/ (incl. ASL model) + the small ISL
+# lab frames, but exclude the bulky raw ASL dataset and dev cruft.
+.git
+.github
+.venv
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+
+# 1.2 GB of raw ASL training images — landmarks/model are already produced.
+datasets/asl_dataset2
+datasets/asl_landmarks.csv
+
+# Generated / hardware-specific artefacts not needed at runtime.
+checkpoints/
+*.plan
+*.engine
+
+# Docs and chart aren't needed inside the app image.
+spec_*.md
+k8s/

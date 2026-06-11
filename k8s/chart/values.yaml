@@ -9,28 +9,39 @@ storageClass: microk8s-hostpath
 images:
   tutorApp: sign-tutor/tutor-app:0.2
   triton: nvcr.io/nvidia/tritonserver:26.04-py3
+  # tutor-app is imported into the node's containerd locally (no registry), so
+  # never try to pull it.
+  pullPolicy: IfNotPresent
 
 # GPU resource request key (NVIDIA device plugin).
 gpuResourceName: nvidia.com/gpu
+# RuntimeClass for GPU pods (microk8s GPU operator advertises "nvidia").
+runtimeClassName: nvidia
 
 triton:
   httpPort: 8000
   grpcPort: 8001
   pollIntervalSeconds: 5
+  gpu: 1                  # required: engine build + serving
 
 tutorApp:
   port: 7860
+  # GPU for in-pod lab training/trtexec. 0 here because this dev host's single
+  # time-sliced GPU is mostly consumed by other workloads; serving ASL needs
+  # none (the app calls Triton over HTTP). Set >=1 where capacity allows.
+  gpu: 0
 
 ingress:
-  className: nginx
-  tlsSecretName: tutor-tls       # cert-manager / pre-provisioned
+  className: public           # microk8s ingress class
+  tlsSecretName: tutor-tls
 
+# TLS via cert-manager (enabled on the dev cluster). A self-signed Issuer +
+# Certificate populates tlsSecretName. Set false to supply the secret yourself.
+tls:
+  selfSigned: true
+
+# Only the shared Triton model repository needs a PVC. The app's code +
+# languages/ are baked into the image; lab write-dirs use the container fs.
 persistence:
   models:
     size: 2Gi
-  languages:
-    size: 1Gi
-  datasets:
-    size: 5Gi
-  checkpoints:
-    size: 1Gi

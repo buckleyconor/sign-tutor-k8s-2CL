@@ -1,0 +1,29 @@
+{{- if .Values.tls.selfSigned }}
+{{- $ns := include "tutor.namespace" . -}}
+# Self-signed TLS for the lab host (browser warns; fine for an internal lab —
+# webcam access just needs HTTPS). cert-manager issues into tlsSecretName.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: tutor-selfsigned
+  namespace: {{ $ns }}
+  labels:
+    {{- include "tutor.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tutor-tls
+  namespace: {{ $ns }}
+  labels:
+    {{- include "tutor.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.ingress.tlsSecretName }}
+  dnsNames:
+    - {{ .Values.host | quote }}
+  issuerRef:
+    name: tutor-selfsigned
+    kind: Issuer
+{{- end }}

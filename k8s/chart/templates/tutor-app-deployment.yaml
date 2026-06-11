@@ -17,26 +17,26 @@ spec:
       labels:
         app: tutor-app
     spec:
+      runtimeClassName: {{ .Values.runtimeClassName }}
       containers:
         - name: tutor-app
           image: {{ .Values.images.tutorApp }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
           env:
             - { name: NAMESPACE, value: {{ $ns | quote }} }
             - { name: TRITON_URL, value: "triton:{{ .Values.triton.httpPort }}" }
           ports:
             - { name: http, containerPort: {{ .Values.tutorApp.port }} }
+          {{- if gt (int .Values.tutorApp.gpu) 0 }}
           resources:
             limits:
-              {{ .Values.gpuResourceName }}: 1
+              {{ .Values.gpuResourceName }}: {{ .Values.tutorApp.gpu }}
+          {{- end }}
           volumeMounts:
             # Shared model repository — read-write here so engines built in this
-            # pod land directly in Triton's repository (no cross-pod copy).
+            # pod (lab ISL flow) land directly in Triton's repository. The app's
+            # code + languages/ (incl. the ASL model) are baked into the image;
+            # lab write-dirs (checkpoints/, datasets/) use the container fs.
             - { name: models, mountPath: /models }
-            - { name: languages, mountPath: /app/languages }
-            - { name: datasets, mountPath: /app/datasets }
-            - { name: checkpoints, mountPath: /app/checkpoints }
       volumes:
         - { name: models, persistentVolumeClaim: { claimName: models } }
-        - { name: languages, persistentVolumeClaim: { claimName: languages } }
-        - { name: datasets, persistentVolumeClaim: { claimName: datasets } }
-        - { name: checkpoints, persistentVolumeClaim: { claimName: checkpoints } }
