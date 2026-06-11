@@ -31,11 +31,20 @@ from training.model_one_hand import OneHandClassifier
 N_META = 3
 
 
+# Guarantee enough gradient steps per epoch on small datasets. Without this, the
+# default batch size (tuned for the large ASL set) gives only ~3 batches/epoch on
+# the ~700-row ISL set -> ~150 steps over 50 epochs -> the model badly underfits
+# (~60% val acc). See the ISL ablation in the project notes.
+MIN_BATCHES_PER_EPOCH = 16
+
+
 class LandmarkDataset(Dataset):
-    def __init__(self, feats: np.ndarray, labels: np.ndarray, augment: bool):
+    def __init__(self, feats: np.ndarray, labels: np.ndarray, augment: bool,
+                 mirror: bool = False):
         self._feats = feats.astype(np.float32)
         self._labels = labels.astype(np.int64)
         self._augment = augment
+        self._mirror = mirror
         self._rng = np.random.default_rng(0)
 
     def __len__(self):
@@ -44,7 +53,7 @@ class LandmarkDataset(Dataset):
     def __getitem__(self, idx):
         x = self._feats[idx]
         if self._augment:
-            x = augment_one_hand(x, self._rng)
+            x = augment_one_hand(x, self._rng, mirror=self._mirror)
         return torch.from_numpy(x), int(self._labels[idx])
 
 
@@ -94,13 +103,21 @@ def train(args) -> None:
     print(f"Training on {device}; {len(classes)} classes; "
           f"{len(train_idx)} train / {len(val_idx)} val samples")
 
+    # Shrink the batch on small datasets so there are enough updates per epoch.
+    eff_batch = min(args.batch_size, max(8, len(train_idx) // MIN_BATCHES_PER_EPOCH))
+    if eff_batch != args.batch_size:
+        print(f"Small dataset: batch_size {args.batch_size} -> {eff_batch} "
+              f"(~{len(train_idx) // eff_batch} batches/epoch) for adequate "
+              f"gradient steps.")
+
     train_loader = DataLoader(
-        LandmarkDataset(feats[train_idx], labels[train_idx], augment=True),
-        batch_size=args.batch_size, shuffle=True,
+        LandmarkDataset(feats[train_idx], labels[train_idx], augment=True,
+                        mirror=args.mirror),
+        batch_size=eff_batch, shuffle=True,
     )
     val_loader = DataLoader(
         LandmarkDataset(feats[val_idx], labels[val_idx], augment=False),
-        batch_size=args.batch_size,
+        batch_size=eff_batch,
     )
 
     model = OneHandClassifier(num_classes=len(classes)).to(device)
@@ -151,8 +168,12 @@ def main():
     p.add_argument("--checkpoint-dir", type=Path, required=True)
     p.add_argument("--csv-file", type=Path, required=True)
     p.add_argument("--val-split", type=float, default=0.2)
-    p.add_argument("--batch-size", type=int, default=256)
+    p.add_argument("--batch-size", type=int, default=256,
+                   help="auto-reduced on small datasets to keep enough steps")
     p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--mirror", action="store_true",
+                   help="enable mirror-flip augmentation (off by default; see "
+                        "training/augment.py)")
     train(p.parse_args())
 
 

@@ -189,7 +189,10 @@ Unlike image-space augmentation (which would use a library like NVIDIA DALI to a
 |---|---|---|
 | Gaussian noise | `± ~1%` jitter on each coordinate | MediaPipe itself is noisy; teaching the model to tolerate noise |
 | In-plane rotation `± 10°` | Rotates landmarks around the wrist | Handles wrist tilt variation |
-| Mirror flip (50% chance) | Flips the x-axis | Handles left/right hand variation |
+
+> A mirror-flip augmentation is available (`--mirror`) but **off by default**: an
+> ISL ablation showed it consistently lowers accuracy by ~1–4 points, because a
+> mirrored handshape can resemble a different letter. Leave it off.
 
 ### 3.3 Augmentation is automatic
 
@@ -219,7 +222,13 @@ python training/train_classifier.py \
     --csv-file checkpoints/isl/train_log.csv
 ```
 
-Validation accuracy should rise quickly and plateau in the 80–95% range depending on dataset quality.
+Validation accuracy should rise quickly and plateau in the **90–96%** range.
+
+> 💡 You'll see a line like `Small dataset: batch_size 256 -> 44 (~16
+> batches/epoch)`. That's expected and intentional: the ISL set (~700 rows) is
+> far smaller than the ASL set the default batch size targets, so the trainer
+> shrinks the batch to give enough gradient updates per epoch. Without it the
+> model badly underfits (~60% accuracy). No action needed.
 
 > 💡 **Want to see the GPU at work?** Run `nvidia-smi` *before* you start training to note the baseline, then again right after it finishes. The model is tiny so utilisation comes in short bursts; don't use `nvidia-smi --loop` in this single terminal — a continuous command would occupy it until the 5-minute cap.
 

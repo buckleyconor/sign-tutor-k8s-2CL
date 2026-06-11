@@ -354,7 +354,7 @@ Apply at training time, not pre-computed (avoids dataset bloat):
 | Gaussian noise | σ = 0.01 on each coordinate | MediaPipe itself is noisy; teaches model robustness |
 | In-plane rotation | ±10° around the wrist | Simulates wrist tilt during signing |
 | Small scaling | ×0.95 to ×1.05 | Defensive — should already be neutralised by normalisation |
-| Mirror flip (one-handed only) | x → -x with 50% probability | Doubles effective data; one-handed signs are mostly handedness-agnostic |
+| Mirror flip (one-handed only) | x → -x with 50% probability | **Off by default** (`--mirror` to enable). Originally included on the theory that one-handed signs are handedness-agnostic, but an ISL ablation showed it consistently *lowers* accuracy by ~1–4 pts — a mirrored handshape can resemble a different letter. Enable only if a specific dataset is shown to benefit. |
 
 ### 8.2 What NOT to augment
 
@@ -368,8 +368,9 @@ Apply at training time, not pre-computed (avoids dataset bloat):
 # training/augment.py
 import numpy as np
 
-def augment_one_hand(vec: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-    """vec: (63,) normalised landmark vector."""
+def augment_one_hand(vec: np.ndarray, rng: np.random.Generator,
+                     mirror: bool = False) -> np.ndarray:
+    """vec: (63,) normalised landmark vector. mirror off by default."""
     pts = vec.reshape(21, 3).copy()
     # noise
     pts += rng.normal(0, 0.01, pts.shape).astype(np.float32)
@@ -378,8 +379,8 @@ def augment_one_hand(vec: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     c, s = np.cos(theta), np.sin(theta)
     R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=np.float32)
     pts = pts @ R.T
-    # mirror with 50% probability
-    if rng.random() < 0.5:
+    # mirror with 50% probability — opt-in (lowers ISL accuracy; see §8.1)
+    if mirror and rng.random() < 0.5:
         pts[:, 0] = -pts[:, 0]
     return pts.flatten()
 ```
