@@ -18,25 +18,31 @@ spec:
         app: triton
     spec:
       initContainers:
-        # Build the bundled ASL TensorRT engine for this cluster's GPU (sm_120).
+        # Build the bundled ASL TensorRT engine for this cluster's GPU (sm_120)
+        # from the ONNX delivered via the asl-bootstrap ConfigMap.
         - name: build-asl-engine
           image: {{ .Values.images.triton }}
           command: ["/bin/bash", "-c"]
           args:
             - |
               set -e
+              if [ ! -f /bootstrap/model.onnx ]; then
+                echo "ERROR: ASL model.onnx not delivered. Produce it with" \
+                     "'bash training/build_asl_model.sh', copy it to" \
+                     "k8s/chart/files/asl/model.onnx, and reinstall." >&2
+                exit 1
+              fi
               if [ ! -f /models/asl_classifier/1/model.plan ]; then
                 mkdir -p /models/asl_classifier/1
-                trtexec --onnx=/onnx/asl/model.onnx \
+                trtexec --onnx=/bootstrap/model.onnx \
                   --saveEngine=/models/asl_classifier/1/model.plan \
                   --minShapes=input:1x63 --optShapes=input:32x63 \
                   --maxShapes=input:64x63 --useCudaGraph
-                cp /repo/asl_classifier/config.pbtxt /models/asl_classifier/config.pbtxt
+                cp /bootstrap/config.pbtxt /models/asl_classifier/config.pbtxt
               fi
           volumeMounts:
             - { name: models, mountPath: /models }
-            - { name: onnx, mountPath: /onnx, readOnly: true }
-            - { name: triton-repo, mountPath: /repo, readOnly: true }
+            - { name: asl-bootstrap, mountPath: /bootstrap, readOnly: true }
       containers:
         - name: triton
           image: {{ .Values.images.triton }}
@@ -62,13 +68,8 @@ spec:
         - name: models
           persistentVolumeClaim:
             claimName: models
-        # ASL ONNX is delivered via a ConfigMap/secret in a real deploy; mounted
-        # read-only here for the init-container engine build.
-        - name: onnx
+        # ASL config.pbtxt (inline) + pre-built ONNX (binary), delivered for the
+        # init-container engine build. See asl-bootstrap-configmap.yaml.
+        - name: asl-bootstrap
           configMap:
-            name: onnx-models
-            optional: true
-        - name: triton-repo
-          configMap:
-            name: triton-repo
-            optional: true
+            name: asl-bootstrap

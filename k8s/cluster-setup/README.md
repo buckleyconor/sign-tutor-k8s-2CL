@@ -27,10 +27,22 @@ microk8s enable gpu hostpath-storage ingress
 
 ## ASL model delivery
 
-The bundled ASL `model.onnx` is delivered to the Triton init container via an
-`onnx-models` ConfigMap (or an init-time copy from the `languages` PVC), and the
-Triton repo `config.pbtxt` files via a `triton-repo` ConfigMap. The init
-container compiles the engine for sm_120 on first start.
+The chart is self-contained per release via the **`asl-bootstrap` ConfigMap**
+(`templates/asl-bootstrap-configmap.yaml`): it carries the ASL `config.pbtxt`
+(inline) and the pre-built ASL `model.onnx` (binary, from
+`k8s/chart/files/asl/model.onnx`). The Triton init container mounts it, compiles
+the ONNX to a TensorRT engine for sm_120 on first start, and drops the config
+into the shared `triton-models` PVC.
+
+Produce and place the ONNX before deploying (see `k8s/chart/files/README.md`):
+
+```bash
+bash training/build_asl_model.sh                       # in the tutor-app container
+cp languages/asl/model.onnx k8s/chart/files/asl/model.onnx
+```
+
+The ISL model is produced by participants during the lab and written directly to
+the shared `triton-models` PVC — no ConfigMap needed.
 
 ## Per-participant deploy
 

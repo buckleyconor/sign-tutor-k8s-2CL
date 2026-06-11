@@ -1,0 +1,25 @@
+{{- $ns := include "tutor.namespace" . -}}
+# Self-contained ASL bootstrap for the Triton init container: the model config
+# (inline) plus the pre-built ASL ONNX (binary, ~tens of KB — well under the 1 MB
+# ConfigMap limit). Produce the ONNX with `bash training/build_asl_model.sh` and
+# drop it at `k8s/chart/files/asl/model.onnx` before `helm install`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: asl-bootstrap
+  namespace: {{ $ns }}
+  labels:
+    {{- include "tutor.labels" . | nindent 4 }}
+data:
+  config.pbtxt: |
+    name: "asl_classifier"
+    platform: "tensorrt_plan"
+    max_batch_size: 64
+    input  [ { name: "input",  data_type: TYPE_FP32, dims: [63] } ]
+    output [ { name: "output", data_type: TYPE_FP32, dims: [26] } ]
+    instance_group [ { count: 1, kind: KIND_GPU } ]
+{{- $onnx := .Files.Get "files/asl/model.onnx" }}
+{{- if $onnx }}
+binaryData:
+  model.onnx: {{ $onnx | b64enc }}
+{{- end }}
