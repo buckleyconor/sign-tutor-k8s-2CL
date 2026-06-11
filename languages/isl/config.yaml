@@ -1,0 +1,11 @@
+name: "Irish Sign Language"
+code: "isl"
+input_hands: 1
+input_type: "one-handed"
+classes: ["A","B","C","D","E","F","G","H","I","J","K","L","M",
+          "N","O","P","Q","R","S","T","U","V","W","X","Y","Z"]
+triton_model_name: "isl_classifier"
+references_dir: "references"
+notes:
+  dynamic_letters: ["J", "X", "Z"]
+  attribution: "Reference images: TBC"

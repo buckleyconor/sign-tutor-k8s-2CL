@@ -1,0 +1,36 @@
+# One release per lab participant. Override participant/host per deploy.
+participant: p1                 # -> namespace lab-p1
+host: p1.lab.internal          # Ingress host (TLS)
+
+# StorageClass differs by environment: microk8s-hostpath on the dev host,
+# ceph-csi/cephfs on Canonical Charmed Kubernetes.
+storageClass: microk8s-hostpath
+
+images:
+  tutorApp: sign-tutor/tutor-app:0.2
+  triton: nvcr.io/nvidia/tritonserver:26.04-py3
+
+# GPU resource request key (NVIDIA device plugin).
+gpuResourceName: nvidia.com/gpu
+
+triton:
+  httpPort: 8000
+  grpcPort: 8001
+  pollIntervalSeconds: 5
+
+tutorApp:
+  port: 7860
+
+ingress:
+  className: nginx
+  tlsSecretName: tutor-tls       # cert-manager / pre-provisioned
+
+persistence:
+  models:
+    size: 2Gi
+  languages:
+    size: 1Gi
+  datasets:
+    size: 5Gi
+  checkpoints:
+    size: 1Gi

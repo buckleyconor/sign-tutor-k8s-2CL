@@ -1,0 +1,18 @@
+[project]
+name = "sign-tutor-k8s"
+version = "0.2.0"
+description = "Multi-language sign language tutor — NVIDIA stack on Kubernetes"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires a running Triton with at least one model loaded",
+]
+# Skip integration tests by default: pytest -m "not integration"
+
+[tool.black]
+line-length = 88
+
+[tool.ruff]
+line-length = 88

@@ -1,0 +1,9 @@
+name: "American Sign Language"
+code: "asl"
+input_hands: 1
+classes: ["A","B","C","D","E","F","G","H","I","J","K","L","M",
+          "N","O","P","Q","R","S","T","U","V","W","X","Y","Z"]
+triton_model_name: "asl_classifier"
+references_dir: "references"
+notes:
+  dynamic_letters: ["J", "Z"]

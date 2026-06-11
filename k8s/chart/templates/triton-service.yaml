@@ -1,0 +1,15 @@
+{{- $ns := include "tutor.namespace" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: triton
+  namespace: {{ $ns }}
+  labels:
+    app: triton
+    {{- include "tutor.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: triton
+  ports:
+    - { name: http, port: {{ .Values.triton.httpPort }}, targetPort: http }
+    - { name: grpc, port: {{ .Values.triton.grpcPort }}, targetPort: grpc }

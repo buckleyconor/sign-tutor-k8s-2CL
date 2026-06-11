@@ -1,0 +1,17 @@
+{{- $ns := include "tutor.namespace" . -}}
+{{- range $name, $spec := .Values.persistence }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "tutor.labels" $ | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: {{ $.Values.storageClass }}
+  resources:
+    requests:
+      storage: {{ $spec.size }}
+{{- end }}

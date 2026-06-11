@@ -1,0 +1,74 @@
+{{- $ns := include "tutor.namespace" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: triton
+  namespace: {{ $ns }}
+  labels:
+    app: triton
+    {{- include "tutor.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: triton
+  template:
+    metadata:
+      labels:
+        app: triton
+    spec:
+      initContainers:
+        # Build the bundled ASL TensorRT engine for this cluster's GPU (sm_120).
+        - name: build-asl-engine
+          image: {{ .Values.images.triton }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              if [ ! -f /models/asl_classifier/1/model.plan ]; then
+                mkdir -p /models/asl_classifier/1
+                trtexec --onnx=/onnx/asl/model.onnx \
+                  --saveEngine=/models/asl_classifier/1/model.plan \
+                  --minShapes=input:1x63 --optShapes=input:32x63 \
+                  --maxShapes=input:64x63 --useCudaGraph
+                cp /repo/asl_classifier/config.pbtxt /models/asl_classifier/config.pbtxt
+              fi
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: onnx, mountPath: /onnx, readOnly: true }
+            - { name: triton-repo, mountPath: /repo, readOnly: true }
+      containers:
+        - name: triton
+          image: {{ .Values.images.triton }}
+          args:
+            - tritonserver
+            - --model-repository=/models
+            - --model-control-mode=poll
+            - --repository-poll-secs={{ .Values.triton.pollIntervalSeconds }}
+          ports:
+            - { name: http, containerPort: {{ .Values.triton.httpPort }} }
+            - { name: grpc, containerPort: {{ .Values.triton.grpcPort }} }
+          resources:
+            limits:
+              {{ .Values.gpuResourceName }}: 1
+          readinessProbe:
+            httpGet:
+              path: /v2/health/ready
+              port: http
+            initialDelaySeconds: 10
+          volumeMounts:
+            - { name: models, mountPath: /models }
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: models
+        # ASL ONNX is delivered via a ConfigMap/secret in a real deploy; mounted
+        # read-only here for the init-container engine build.
+        - name: onnx
+          configMap:
+            name: onnx-models
+            optional: true
+        - name: triton-repo
+          configMap:
+            name: triton-repo
+            optional: true

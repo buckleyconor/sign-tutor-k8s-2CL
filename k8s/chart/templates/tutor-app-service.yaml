@@ -1,0 +1,14 @@
+{{- $ns := include "tutor.namespace" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: tutor-app
+  namespace: {{ $ns }}
+  labels:
+    app: tutor-app
+    {{- include "tutor.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: tutor-app
+  ports:
+    - { name: http, port: {{ .Values.tutorApp.port }}, targetPort: http }

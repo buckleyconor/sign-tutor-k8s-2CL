@@ -1,0 +1,9 @@
+# Runtime dependencies. In production these come from the NVIDIA PyTorch base
+# image (torch, tensorrt) plus the pip installs in the Dockerfile.
+mediapipe
+opencv-python-headless
+gradio
+tritonclient[http,grpc]
+pyyaml
+pandas
+numpy

@@ -1,0 +1,7 @@
+# Dev/test dependencies — enough to run the deterministic unit tests off-cluster
+# (registry, normalisation, smoother, scorer, terminal executor).
+-r requirements.txt
+pytest
+pytest-cov
+ruff
+black

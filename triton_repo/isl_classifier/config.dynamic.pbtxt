@@ -1,0 +1,10 @@
+name: "isl_classifier"
+platform: "tensorrt_plan"
+max_batch_size: 64
+input  [ { name: "input",  data_type: TYPE_FP32, dims: [63] } ]
+output [ { name: "output", data_type: TYPE_FP32, dims: [26] } ]
+instance_group [ { count: 1, kind: KIND_GPU } ]
+dynamic_batching {
+  preferred_batch_size: [ 8, 16 ]
+  max_queue_delay_microseconds: 5000
+}

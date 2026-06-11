@@ -1,0 +1,11 @@
+# Traffic-light cutoffs and smoothing window. Tunable per demo (room lighting,
+# camera quality) without code changes.
+amber_min_confidence: 0.50
+green_min_confidence: 0.80
+hold_seconds_for_complete: 1.0
+smoothing_window_frames: 15
+
+# Per-language overrides may be added under a `languages:` key, e.g.:
+# languages:
+#   isl:
+#     green_min_confidence: 0.75

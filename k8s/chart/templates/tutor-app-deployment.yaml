@@ -1,0 +1,42 @@
+{{- $ns := include "tutor.namespace" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tutor-app
+  namespace: {{ $ns }}
+  labels:
+    app: tutor-app
+    {{- include "tutor.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tutor-app
+  template:
+    metadata:
+      labels:
+        app: tutor-app
+    spec:
+      containers:
+        - name: tutor-app
+          image: {{ .Values.images.tutorApp }}
+          env:
+            - { name: NAMESPACE, value: {{ $ns | quote }} }
+            - { name: TRITON_URL, value: "triton:{{ .Values.triton.httpPort }}" }
+          ports:
+            - { name: http, containerPort: {{ .Values.tutorApp.port }} }
+          resources:
+            limits:
+              {{ .Values.gpuResourceName }}: 1
+          volumeMounts:
+            # Shared model repository — read-write here so engines built in this
+            # pod land directly in Triton's repository (no cross-pod copy).
+            - { name: models, mountPath: /models }
+            - { name: languages, mountPath: /app/languages }
+            - { name: datasets, mountPath: /app/datasets }
+            - { name: checkpoints, mountPath: /app/checkpoints }
+      volumes:
+        - { name: models, persistentVolumeClaim: { claimName: models } }
+        - { name: languages, persistentVolumeClaim: { claimName: languages } }
+        - { name: datasets, persistentVolumeClaim: { claimName: datasets } }
+        - { name: checkpoints, persistentVolumeClaim: { claimName: checkpoints } }
