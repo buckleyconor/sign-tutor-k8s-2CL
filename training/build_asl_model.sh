@@ -34,6 +34,11 @@ python training/export_onnx.py \
     --checkpoint "${CKPT_DIR}/best.pt" \
     --output languages/asl/model.onnx
 
-echo "Done. ASL ONNX ready at languages/asl/model.onnx"
+# Stage into the chart so the deploy is self-contained (Helm .Files.Get reads
+# from inside the chart dir). Both copies are committed (we ship ASL pre-trained).
+mkdir -p k8s/chart/files/asl
+cp languages/asl/model.onnx k8s/chart/files/asl/model.onnx
+
+echo "Done. ASL ONNX ready at languages/asl/model.onnx (and staged in k8s/chart/files/asl/)."
 echo "Next: build the TensorRT engine on an sm_120 GPU:"
 echo "  bash training/build_engine.sh languages/asl/model.onnx /models/asl_classifier/1/model.plan"

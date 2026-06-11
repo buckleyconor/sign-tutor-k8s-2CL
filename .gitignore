@@ -7,17 +7,22 @@ htmlcov/
 *.egg-info/
 .venv/
 
-# Large data & generated ML artefacts — keep these out of git
+# Large raw datasets — never committed (fetch per spec_04)
 datasets/
-checkpoints/
-*.csv
-*.onnx
+
+# TensorRT engines — hardware-specific (sm_120), rebuilt per target; never ship
 *.plan
 *.engine
 
-# Keep reference PNGs (GUI assets) but not bulky model files in languages/
-languages/**/model.onnx
-languages/**/landmarks.csv
+# ISL artefacts are PRODUCED BY PARTICIPANTS during the lab — keep them out so
+# the repo ships ASL pre-trained only. (languages/isl/{config.yaml,references/}
+# ARE tracked; the trained model + landmarks are the lab deliverable.)
+languages/isl/landmarks.csv
+languages/isl/model.onnx
+checkpoints/isl/
+
+# We DO ship ASL pre-trained: languages/asl/{model.onnx,landmarks.csv},
+# checkpoints/asl/, and k8s/chart/files/asl/model.onnx are committed.
 
 # OS
 .DS_Store
