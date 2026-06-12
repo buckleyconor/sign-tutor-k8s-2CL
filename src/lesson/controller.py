@@ -12,6 +12,7 @@ suite exercises.
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -39,6 +40,41 @@ def render_light(light: Light = Light.RED) -> str:
     )
 
 
+def _quality_colour(pct: float) -> str:
+    # Visual mapping requested for the bar: red <=40, amber 41-75, green 75+.
+    # (Independent of the scorer's completion thresholds, which still gate
+    # letter advancement.)
+    if pct <= 40:
+        return "#E74C3C"
+    if pct <= 75:
+        return "#FFBF00"
+    return "#27AE60"
+
+
+def render_quality_bar(pct: float) -> str:
+    """Render the 0-100% quality bar with a target marker at 90%.
+
+    The fill width/colour are inline so each update reflects the latest value;
+    smoothness comes from the controller's EMA (small, frequent steps) plus the
+    CSS transition on ``.quality-fill`` (see ``ui/theme.py``).
+    """
+    pct = max(0.0, min(100.0, float(pct)))
+    colour = _quality_colour(pct)
+    return (
+        '<div class="quality-wrap">'
+        '<div class="quality-track">'
+        f'<div class="quality-fill" style="width:{pct:.0f}%;background:{colour};">'
+        "</div>"
+        '<div class="quality-target" style="left:90%;"></div>'
+        "</div>"
+        '<div class="quality-meta">'
+        f"<span>Quality: {pct:.0f}%</span>"
+        '<span class="quality-target-label">target 90%</span>'
+        "</div>"
+        "</div>"
+    )
+
+
 def _load_thresholds(path: Path = Path("configs/thresholds.yaml")) -> dict:
     if path.exists():
         with open(path) as f:
@@ -55,8 +91,16 @@ class LessonController:
         self._clients: dict[str, TritonClassifier] = {}
         self._references: dict[str, dict[str, np.ndarray]] = {}
 
+        # MediaPipe's graph is not thread-safe and navigation mutates the same
+        # smoother/scorer/index a streaming frame reads. One participant per pod,
+        # but multiple tabs (and the frame vs. button race) still need this lock.
+        # The webcam stream is also pinned to concurrency_limit=1 in ui/app.py.
+        self._lock = threading.Lock()
+
         self._active: Language | None = None
         self._letter_idx: int = 0
+        self._quality_ema: float = 0.0  # smoothed 0-1 quality for the bar
+        self._ema_alpha: float = float(self._cfg.get("quality_ema_alpha", 0.35))
         self._smoother = PredictionSmoother(
             window=int(self._cfg.get("smoothing_window_frames", 15))
         )
@@ -90,6 +134,7 @@ class LessonController:
     def set_language(self, code: str):
         self._active = self._languages[code]
         self._letter_idx = 0
+        self._quality_ema = 0.0
         self._smoother.reset()
         self._new_scorer()
 
@@ -113,56 +158,92 @@ class LessonController:
         if self._active is None:
             return
         self._letter_idx = (self._letter_idx + 1) % len(self._active.classes)
+        self._quality_ema = 0.0
         self._smoother.reset()
         self._new_scorer()
 
     def skip(self):
         self.next_letter()
 
+    # ----------------------------------------------------------- UI view hooks
+    # These return ``(reference_image, quality_html, status_md)`` so the webcam
+    # stream is no longer the only thing that can paint the reference panel.
+    def current_view(self) -> tuple[np.ndarray | None, str, str]:
+        if self._active is None:
+            return None, render_quality_bar(0.0), ""
+        reference = self._reference_image(self._active, self.current_letter)
+        status = (
+            f"Sign **{self.current_letter}** — match the reference, then hold steady."
+        )
+        return reference, render_quality_bar(self._quality_ema), status
+
+    def on_language_change(self, code: str):
+        with self._lock:
+            self.set_language(code)
+            return self.current_view()
+
+    def on_next(self):
+        with self._lock:
+            self.next_letter()
+            return self.current_view()
+
+    def on_skip(self):
+        with self._lock:
+            self.skip()
+            return self.current_view()
+
     # --------------------------------------------------------------- per-frame
     def on_frame(self, frame: np.ndarray, lang_code: str):
         """Process one webcam frame.
 
-        Returns ``(annotated_frame, reference_image, light_html, status_md)``.
+        Returns ``(reference_image, quality_html, status_md)``. The webcam
+        preview renders client-side, so we no longer echo the frame back to the
+        input component (that churned the stream and bought nothing while the
+        landmark overlay is still a TODO). The whole body is lock-guarded
+        because MediaPipe's graph is not thread-safe.
         """
-        if self._active is None or lang_code != self._active.code:
-            self.set_language(lang_code)
-        lang = self._active
+        with self._lock:
+            if self._active is None or lang_code != self._active.code:
+                self.set_language(lang_code)
+            lang = self._active
+            reference = self._reference_image(lang, self.current_letter)
 
-        detections = self._tracker.process(frame) if frame is not None else []
-        feat = build_feature_vector(lang, detections)
-        reference = self._reference_image(lang, self.current_letter)
+            target_q = 0.0  # 0-1 confidence *for the target class* this frame
+            status = f"Sign **{self.current_letter}** — show your hand to the camera."
 
-        if feat is None:
-            return (
-                frame,
-                reference,
-                render_light(Light.RED),
-                "**No hand detected** — show your hand to the camera.",
+            detections = self._tracker.process(frame) if frame is not None else []
+            feat = build_feature_vector(lang, detections)
+            if feat is not None:
+                logits = self._client_for(lang).infer(feat)
+                probs = _softmax(logits)
+                pred_idx = int(np.argmax(probs))
+                self._smoother.update(pred_idx, float(probs[pred_idx]))
+                smoothed = self._smoother.smoothed()
+                if smoothed is None:
+                    status = "Hold steady…"
+                else:
+                    s_idx, s_conf = smoothed
+                    _light, completed = self._scorer.evaluate(s_idx, s_conf)
+                    target_q = s_conf if s_idx == self._letter_idx else 0.0
+                    status = (
+                        f"Sign **{self.current_letter}** — "
+                        f"predicted **{lang.classes[s_idx]}** ({s_conf:.0%})"
+                    )
+                    if completed:
+                        self.next_letter()  # resets _quality_ema to 0
+                        reference = self._reference_image(lang, self.current_letter)
+                        target_q = 0.0
+                        status = (
+                            f"✅ **{lang.classes[s_idx]}** complete! "
+                            f"Next: {self.current_letter}"
+                        )
+
+            # Ease the bar toward this frame's quality so it grows/recedes
+            # smoothly instead of snapping.
+            self._quality_ema += self._ema_alpha * (
+                target_q * 100.0 - self._quality_ema
             )
-
-        logits = self._client_for(lang).infer(feat)
-        probs = _softmax(logits)
-        pred_idx = int(np.argmax(probs))
-        self._smoother.update(pred_idx, float(probs[pred_idx]))
-
-        smoothed = self._smoother.smoothed()
-        if smoothed is None:
-            return frame, reference, render_light(Light.RED), "Hold steady…"
-
-        s_idx, s_conf = smoothed
-        light, completed = self._scorer.evaluate(s_idx, s_conf)
-        status = (
-            f"Sign **{self.current_letter}** — "
-            f"predicted **{lang.classes[s_idx]}** ({s_conf:.0%})"
-        )
-        if completed:
-            self.next_letter()
-            status = (
-                f"✅ **{lang.classes[s_idx]}** complete! Next: {self.current_letter}"
-            )
-        # TODO: overlay landmarks on `frame` before returning.
-        return frame, reference, render_light(light), status
+            return reference, render_quality_bar(self._quality_ema), status
 
 
 def _softmax(x: np.ndarray) -> np.ndarray:

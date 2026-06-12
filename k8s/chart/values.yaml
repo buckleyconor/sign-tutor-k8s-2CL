@@ -7,7 +7,7 @@ host: p1.lab.internal          # Ingress host (TLS)
 storageClass: microk8s-hostpath
 
 images:
-  tutorApp: localhost:32000/sign-tutor/tutor-app:0.6
+  tutorApp: localhost:32000/sign-tutor/tutor-app:0.7
   triton: nvcr.io/nvidia/tritonserver:26.04-py3
   # tutor-app is built locally and pushed to the microk8s built-in registry
   # (localhost:32000). IfNotPresent means the node caches by tag, so bump the

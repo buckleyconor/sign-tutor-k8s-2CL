@@ -26,3 +26,7 @@ checkpoints/isl/
 
 # OS
 .DS_Store
+
+# Raw debugging artefacts (HAR captures, kubectl dumps) — keep reports, not these
+Logs/*.har
+Logs/*.txt

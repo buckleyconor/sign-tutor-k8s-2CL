@@ -6,8 +6,7 @@ NGINX Ingress); the terminal executes server-side inside this pod.
 
 import gradio as gr
 
-from src.lesson.controller import LessonController
-from src.lesson.scorer import Light
+from src.lesson.controller import LessonController, render_quality_bar
 from src.registry import load_registry
 from src.terminal.executor import run_command
 from src.ui.theme import CSS, THEME
@@ -40,7 +39,7 @@ def build_app() -> gr.Blocks:
                 cam = gr.Image(sources=["webcam"], streaming=True, label="Live feed")
             with gr.Column(scale=1):
                 target = gr.Image(label="Sign this letter", interactive=False)
-                light = gr.HTML(value=controller.render_light(Light.RED))
+                quality = gr.HTML(value=render_quality_bar(0.0))
                 status = gr.Markdown()
                 with gr.Row():
                     skip_btn = gr.Button("Skip")
@@ -57,14 +56,25 @@ def build_app() -> gr.Blocks:
                     placeholder="python training/train_classifier.py ...",
                 )
 
+        views = [target, quality, status]
+        # Throttle to a rate the MediaPipe+Triton pipeline can sustain and pin to
+        # one in-flight frame, so the queue can't back up into the freeze/spinner
+        # seen in the HAR. The frame is no longer echoed to `cam`.
         cam.stream(
             controller.on_frame,
             inputs=[cam, lang],
-            outputs=[cam, target, light, status],
+            outputs=views,
+            stream_every=0.2,
+            concurrency_limit=1,
+            concurrency_id="frame",
+            show_progress="hidden",
         )
-        lang.change(lambda code: controller.set_language(code), inputs=lang)
-        skip_btn.click(lambda: controller.skip())
-        next_btn.click(lambda: controller.next_letter())
+        # Paint the reference letter on load and on every navigation — no longer
+        # dependent on a webcam frame arriving first.
+        demo.load(controller.current_view, outputs=views)
+        lang.change(controller.on_language_change, inputs=lang, outputs=views)
+        skip_btn.click(controller.on_skip, outputs=views)
+        next_btn.click(controller.on_next, outputs=views)
         term_in.submit(
             run_command, inputs=[term_in, term_out], outputs=[term_out, term_in]
         )
