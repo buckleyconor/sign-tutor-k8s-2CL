@@ -27,7 +27,7 @@ sign-tutor-k8s/
 │       ├── deploy-participant.sh
 │       └── reset-participant.sh
 ├── configs/
-│   └── thresholds.yaml         # traffic-light cutoffs, smoothing window
+│   └── thresholds.yaml         # completion cutoffs, smoothing window, bar EMA
 ├── languages/
 │   ├── asl/
 │   │   ├── config.yaml
@@ -468,33 +468,42 @@ class TrafficLightScorer:
 
 Gradio's `gr.Blocks` API gives precise control over layout. Use a top Row for the language/lesson selector, a Row containing two Columns for the split-screen, and a bottom Row (~25% height, full width) for the embedded terminal.
 
-**Theme.** The UI is themed black-background / lime-green borders / white-grey text, with amber reserved for highlights. This is applied with a dark `gr.Themes` base plus a small CSS override; the palette lives in one place so it can be retuned without touching layout code.
+**Theme.** The UI is themed light-grey-background / lime-green borders / black text, with amber reserved for highlights. This is applied with a light `gr.Themes` base plus a small CSS override; the palette lives in one place so it can be retuned without touching layout code. The same stylesheet also fixes the terminal to a scrolling viewport (Bug 3) and styles the quality bar (§10.2).
 
 ```python
 # src/ui/theme.py
 import gradio as gr
 
 # Palette — single source of truth
-BG     = "#000000"   # black background
+BG     = "#EDEDED"   # light grey background
+PANEL  = "#F7F7F7"   # slightly lighter panel/input fill
 BORDER = "#32CD32"   # lime green element borders
-TEXT   = "#E0E0E0"   # white/grey body text
+TEXT   = "#111111"   # black body text
 ACCENT = "#FFBF00"   # amber — highlights only
+TERMINAL_HEIGHT = "220px"
 
 CSS = f"""
-.gradio-container, .gradio-container * {{
-    background-color: {BG};
-    color: {TEXT};
-}}
+.gradio-container {{ background-color: {BG}; color: {TEXT}; }}
 .gradio-container .block, .gradio-container .form,
 .gradio-container .gr-box, .gradio-container .gr-panel {{
-    border: 1px solid {BORDER} !important;
-    border-radius: 6px;
+    background-color: {PANEL}; color: {TEXT};
+    border: 1px solid {BORDER} !important; border-radius: 6px;
 }}
 .gradio-container .highlight, .gradio-container .amber {{ color: {ACCENT}; }}
-#lab-terminal textarea {{
-    background: {BG}; color: {TEXT};
-    font-family: monospace; border: 1px solid {BORDER} !important;
-}}
+
+/* Terminal: fixed-height viewport that scrolls instead of growing. */
+#lab-terminal .cm-editor {{ max-height: {TERMINAL_HEIGHT}; background: {PANEL}; }}
+#lab-terminal .cm-scroller {{ max-height: {TERMINAL_HEIGHT}; overflow: auto; }}
+
+/* Quality bar — fill width/colour are inline (see §10.2); the CSS transition
+   plus the controller's EMA give the smooth grow/recede. */
+.quality-track {{ position: relative; width: 100%; height: 22px;
+    background: {PANEL}; border: 1px solid {BORDER}; border-radius: 11px;
+    overflow: hidden; }}
+.quality-fill {{ height: 100%; transition: width 180ms linear,
+    background-color 180ms linear; }}
+.quality-target {{ position: absolute; top: -2px; width: 2px; height: 26px;
+    background: {TEXT}; }}
 """
 
 THEME = gr.themes.Base(
@@ -507,7 +516,7 @@ THEME = gr.themes.Base(
 # src/ui/app.py (skeleton)
 import gradio as gr
 from src.registry import load_registry
-from src.lesson.controller import LessonController
+from src.lesson.controller import LessonController, render_quality_bar
 from src.ui.theme import THEME, CSS
 from src.terminal.executor import run_command   # see §12
 
@@ -529,7 +538,7 @@ def build_app():
                                label="Live feed")
             with gr.Column(scale=1):
                 target = gr.Image(label="Sign this letter", interactive=False)
-                light = gr.HTML(value=controller.render_light())
+                quality = gr.HTML(value=render_quality_bar(0.0))
                 status = gr.Markdown()
                 with gr.Row():
                     skip_btn = gr.Button("Skip")
@@ -543,29 +552,57 @@ def build_app():
                                      placeholder="python training/train_classifier.py ...")
                 term_in.submit(run_command, inputs=[term_in, term_out],
                                outputs=[term_out, term_in])
-        cam.stream(controller.on_frame,
-                   inputs=[cam, lang],
-                   outputs=[cam, target, light, status])
-        # ... wire up button handlers
+
+        views = [target, quality, status]
+        # Throttle to a rate the MediaPipe+Triton pipeline can sustain and pin to
+        # one in-flight frame so the queue can't back up into a freeze. The frame
+        # is NOT echoed back to `cam` (the preview renders client-side).
+        cam.stream(controller.on_frame, inputs=[cam, lang], outputs=views,
+                   stream_every=0.2, concurrency_limit=1, concurrency_id="frame",
+                   show_progress="hidden")
+        # Paint the reference letter on load and on every navigation — no longer
+        # dependent on a webcam frame arriving first.
+        demo.load(controller.current_view, outputs=views)
+        lang.change(controller.on_language_change, inputs=lang, outputs=views)
+        skip_btn.click(controller.on_skip, outputs=views)
+        next_btn.click(controller.on_next, outputs=views)
     return demo
 
 if __name__ == "__main__":
     build_app().launch(server_name="0.0.0.0", server_port=7860)
 ```
 
-### 10.2 Light rendering
+> **Why the throttle and lock matter.** MediaPipe's graph is not thread-safe, and the per-frame pipeline (MediaPipe + a blocking Triton HTTP call) is heavy. Left unthrottled with the frame echoed back into the webcam component, the Gradio queue backs up and the stream freezes/spins. The fix is three-fold: `concurrency_limit=1` + `stream_every=0.2` on the stream, a `threading.Lock` around `on_frame`/navigation in the controller, and dropping `cam` from the outputs.
 
-The traffic-light disc uses **semantic** red/amber/green and is deliberately exempt from the black/lime chrome palette — the colours carry meaning (pass/close/fail) and must stay legible. The amber is aligned to the UI accent (`#FFBF00`) so the one highlight colour is consistent across chrome and scoring.
+### 10.2 Quality-bar rendering
+
+The feedback widget is a 0–100% bar with a target marker at 90%. The fill's width and colour are inline so each update reflects the latest value; the colour uses **semantic** red/amber/green that carries meaning (wrong/close/match) and is deliberately exempt from the chrome palette. The amber is aligned to the UI accent (`#FFBF00`). Smoothness comes from two places: the controller eases the value with an EMA (small, frequent steps at ~5 fps), and the CSS `transition` on `.quality-fill` animates each step.
 
 ```python
-def render_light(light: Light) -> str:
-    colours = {Light.RED: "#E74C3C",
-               Light.AMBER: "#FFBF00",   # aligned to UI accent
-               Light.GREEN: "#27AE60"}
-    return (f'<div style="width:60px;height:60px;'
-            f'border-radius:50%;background:{colours[light]};'
-            f'margin:auto;box-shadow:0 0 12px {colours[light]};"></div>')
+def _quality_colour(pct: float) -> str:        # red <=40, amber 41-75, green 75+
+    if pct <= 40: return "#E74C3C"
+    if pct <= 75: return "#FFBF00"
+    return "#27AE60"
+
+def render_quality_bar(pct: float) -> str:
+    pct = max(0.0, min(100.0, float(pct)))
+    colour = _quality_colour(pct)
+    return (
+        '<div class="quality-wrap"><div class="quality-track">'
+        f'<div class="quality-fill" style="width:{pct:.0f}%;background:{colour};"></div>'
+        '<div class="quality-target" style="left:90%;"></div></div>'
+        f'<div class="quality-meta"><span>Quality: {pct:.0f}%</span>'
+        '<span class="quality-target-label">target 90%</span></div></div>')
 ```
+
+The continuous value is derived in the controller from the smoothed confidence for the *target* class (0 when the predicted class isn't the target), then EMA-eased:
+
+```python
+target_q = s_conf if s_idx == self._letter_idx else 0.0
+self._quality_ema += self._ema_alpha * (target_q * 100.0 - self._quality_ema)
+```
+
+`TrafficLightScorer` (§9.2) is unchanged and still drives **completion** — the bar is a presentation layer over the same thresholds, so the scorer's unit tests are unaffected.
 
 ### 10.3 Performance considerations
 

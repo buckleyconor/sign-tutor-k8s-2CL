@@ -44,7 +44,7 @@ Sign language is a primary mode of communication for the Deaf and Hard-of-Hearin
 
 - Real-time hand tracking via webcam input.
 - Recognition of static finger-spelled alphabet letters in ASL and ISL.
-- Split-screen UI: live feed + reference image + traffic-light score.
+- Split-screen UI: live feed + reference image + quality bar.
 - Lesson progression: A→Z guided practice with feedback.
 - Per-language model training and TensorRT optimisation.
 - Triton-based inference serving.
@@ -115,7 +115,7 @@ The system is organised into five layers:
 - **Perception layer** — MediaPipe Hands extracts 21 landmarks per detected hand.
 - **Feature layer** — landmarks normalised into model input tensor (63 floats for one-handed).
 - **Inference layer** — Triton serves the per-language TensorRT engine; gRPC/HTTP call returns class probabilities.
-- **Application layer** — Gradio UI, lesson controller, scoring, traffic-light feedback.
+- **Application layer** — Gradio UI, lesson controller, scoring, quality-bar feedback.
 
 ### 4.3 Data flow per frame
 
@@ -126,8 +126,8 @@ The system is organised into five layers:
 5. If a complete input is available, it is sent to Triton with the model name matching the active language (e.g. `asl_classifier`).
 6. Triton returns 26 class logits.
 7. Score smoother applies a rolling average over the last N frames to suppress jitter.
-8. Lesson controller compares smoothed prediction to target letter and emits a traffic-light score.
-9. Gradio renders annotated webcam frame + reference image + score + feedback text.
+8. Lesson controller compares smoothed prediction to target letter and emits a 0–100% quality score.
+9. Gradio renders the reference image + quality bar + feedback text. (The live webcam preview is rendered client-side; the processed frame is not echoed back to the feed — a landmark overlay remains a stretch goal.)
 
 ### 4.4 Multi-language design
 
@@ -207,10 +207,10 @@ The UI is a single-page split-screen layout. Left half: live annotated webcam fe
 |                            |                                 |
 |                            |   Sign the letter:              |
 |     LIVE WEBCAM            |                                 |
-|     (with landmarks        |          [reference image of D] |
-|      overlaid)             |                                 |
-|                            |   Quality:  [GREEN]             |
-|                            |   Confidence: 96%               |
+|     (client-side preview)  |          [reference image of D] |
+|                            |                                 |
+|                            |   Quality: [██████████░░] 96%   |
+|                            |            ▲ target 90%         |
 |                            |                                 |
 |                            |   [ Skip ]   [ Next letter ]    |
 ---------------------------------------------------------------+
@@ -218,17 +218,21 @@ The UI is a single-page split-screen layout. Left half: live annotated webcam fe
 +----------------------------+---------------------------------+
 ```
 
-The terminal frame occupies the bottom 25% of the UI vertically and spans the full width. It uses Gradio's `gr.Code` component with a monospace font for command input and output display. Commands execute server-side via a Python subprocess handler (`src/terminal/executor.py`) with a configurable timeout (default 300 s / 5 min); the handler streams output back line-by-line so long-running lab commands (extraction, training) show progress live rather than dumping at the end. Output is limited to a maximum of 500 lines to prevent browser memory exhaustion. The terminal supports a scrollable output area; previous commands are retained in the output buffer for reference. The entire UI is black background with element borders in lime green and text in white/grey, with amber reserved for highlights.
+The terminal frame occupies the bottom 25% of the UI vertically and spans the full width. It uses Gradio's `gr.Code` component with a monospace font for command input and output display. Commands execute server-side via a Python subprocess handler (`src/terminal/executor.py`) with a configurable timeout (default 300 s / 5 min); the handler streams output back line-by-line so long-running lab commands (extraction, training) show progress live rather than dumping at the end. Output is limited to a maximum of 500 lines to prevent browser memory exhaustion. The terminal output area is a fixed-height viewport (`#lab-terminal`, ~220 px) that scrolls rather than growing the page; previous commands are retained in the buffer for reference. The entire UI is light-grey background with element borders in lime green and black text, with amber reserved for highlights.
 
-### 6.2 Traffic-light scoring
+### 6.2 Quality-bar scoring
 
-| Light | Trigger | UX behaviour |
+Feedback is a continuous **0–100% quality bar** rather than a discrete light. The bar's value is the smoothed confidence for the *target* class (0% when the predicted class isn't the target), EMA-eased so it grows and recedes smoothly in near-real-time. A marker line sits at the **90% target**. The bar colour follows the value:
+
+| Bar colour | Value | Meaning |
 |---|---|---|
-| 🔴 **RED** | `conf < 0.50`, OR `predicted != target` | Show "try again" hint. Highlight key landmarks that differ from reference (stretch goal). |
-| 🟠 **AMBER** | `0.50 ≤ conf < 0.80` AND `predicted == target` | Show "close" hint. Encourage user to hold the sign more clearly. |
-| 🟢 **GREEN** | `conf ≥ 0.80` AND `predicted == target` sustained for ≥ 1.0 s | Mark letter as completed; auto-advance after a brief celebration animation. |
+| 🔴 Red | `≤ 40%` | Wrong sign, or low confidence — keep adjusting. |
+| 🟠 Amber | `41–75%` | Close — hold the sign more clearly. |
+| 🟢 Green | `> 75%` | Strong match. |
 
-Thresholds are configurable via a single YAML file so demos can be tuned to room lighting / camera quality without code changes.
+**Completion** is governed by the same thresholds as before, applied to the smoothed confidence by `TrafficLightScorer` (retained as the completion engine): a letter is marked complete once `conf ≥ 0.80` AND `predicted == target` is sustained for ≥ 1.0 s, after which the lesson auto-advances. The bar reaching its 90% line is the visual cue that completion is imminent. Thresholds (amber/green cutoffs, hold time, smoothing window, and the bar's EMA factor) are configurable via a single YAML file so demos can be tuned to room lighting / camera quality without code changes.
+
+> The bar's colour cutoffs (40/75) are a *visual* mapping; the *completion* cutoffs (0.50/0.80) are the scorer's — they are intentionally separate.
 
 ### 6.3 Smoothing
 
@@ -239,7 +243,7 @@ Raw frame-by-frame predictions jitter heavily. The UI uses a 15-frame (~0.5 s) r
 1. User selects a language (ASL / ISL).
 2. User selects a lesson (Module 1: Alphabet; Module 2: Words).
 3. System presents target sign with reference image.
-4. User signs; traffic-light updates in real time.
+4. User signs; the quality bar updates in real time.
 5. On sustained GREEN, system advances to next target.
 6. Session ends after the full lesson; summary screen shows per-letter best score.
 
@@ -284,7 +288,7 @@ The embedded terminal is a server-side command executor running inside the `tuto
 |---|---|---|
 | 1 | Environment & dataset | K8S cluster running; ASL Kaggle dataset processed to landmark CSV. |
 | 2 | ASL classifier | Trained PyTorch ASL model, ONNX export, TensorRT engine, Triton serving, smoke test. |
-| 3 | UI + scoring | Gradio split-screen, traffic-light scoring, smoothing, ASL alphabet lesson playable end-to-end. |
+| 3 | UI + scoring | Gradio split-screen, quality-bar scoring, smoothing, ASL alphabet lesson playable end-to-end. |
 | 4 | ISL | ISL dataset captured, classifier trained, plugged in via language registry. Adding a second language proves the framework. |
 | 4 | ISL (one-handed) | ISL dataset captured, classifier trained, plugged in via language registry. Adding a second language proves the framework. |
 | 6 | Module 2 + polish | Static-word lesson set per language. Demo-ready polish, latency tuning, documentation. |

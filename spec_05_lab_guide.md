@@ -12,7 +12,7 @@
 
 You will take a working sign-language recognition application that supports American Sign Language (ASL) and extend it to also support Irish Sign Language (ISL). Along the way you will touch every layer of NVIDIA's vision-AI stack: GPU-accelerated training in **PyTorch** on a **Blackwell** GPU, model optimisation with **TensorRT**, and production serving via **Triton Inference Server**.
 
-The end deliverable is your trained ISL model running live in the same application. When you sign an ISL letter at the webcam, your model — running on the Triton server you just deployed to — recognises it and the traffic-light score turns green.
+The end deliverable is your trained ISL model running live in the same application. When you sign an ISL letter at the webcam, your model — running on the Triton server you just deployed to — recognises it and the quality bar climbs into the green and past the 90% target line.
 
 ### 0.2 What this lab is *not*
 
@@ -77,7 +77,7 @@ Open a browser on the lab workstation and navigate to:
 https://p1.lab.internal
 ```
 
-You should see the sign-language tutor UI with ASL selected — black background, lime-green borders, white/grey text, with an embedded terminal across the bottom. Sign a letter (the reference image shows you how). The quality bar should turn green when you match.
+You should see the sign-language tutor UI with ASL selected — light-grey background, lime-green borders, black text, with an embedded terminal across the bottom. Sign a letter (the reference image shows you how). The quality bar should climb into the green when you match.
 
 > ✅ **Checkpoint:** ASL recognition works.
 

@@ -191,15 +191,17 @@ Manual checklist; tick before any demo. Two people if possible — one signing, 
 
 - [ ] Cold start: `bash k8s/scripts/deploy-participant.sh p1 p1.lab.internal` brings UI to ready state in under 5 minutes (dominated by TRT engine build in the Triton init container).
 - [ ] `https://p1.lab.internal` loads with a valid TLS certificate (no browser warning).
+- [ ] Reference image for the first letter is visible immediately on page load, before any webcam frame (painted by `demo.load`).
 - [ ] Language switch ASL → ISL works without restart; reference images update.
-- [ ] RED / AMBER / GREEN transitions feel responsive (no perceptible lag) when sign is held steady.
-- [ ] Sustained GREEN of ~1 s reliably advances to next letter.
-- [ ] Skip and Next buttons work; lesson can be exited cleanly.
-- [ ] No hand visible: UI shows "no hand detected" rather than a stale prediction.
+- [ ] Webcam preview stays smooth — no freeze/spinner — over a sustained session; the quality bar updates continuously without backing up.
+- [ ] Quality bar grows/recedes smoothly (no jerkiness) and tracks red ≤ 40% → amber 41–75% → green > 75%, with the target line at 90%.
+- [ ] Sustained green above the 80% completion threshold for ~1 s reliably advances to the next letter.
+- [ ] Skip and Next buttons immediately repaint the reference image, quality bar, and status (not only after a webcam frame).
+- [ ] No hand visible: UI shows "show your hand to the camera" and the quality bar eases back toward 0% rather than holding a stale value.
 - [ ] Two different signers (different hand sizes, skin tones if possible) both achieve ≥ 80% letters in a single pass through the alphabet.
 - [ ] No console errors during a 10-minute session (`kubectl logs -n lab-p1 deploy/tutor-app`).
 - [ ] Network disconnected from internet: lab still runs (all images cached on nodes, everything is local).
-- [ ] UI renders with the intended palette: black background, lime-green element borders, white/grey text, amber used only for highlights and the AMBER traffic light.
+- [ ] UI renders with the intended palette: light-grey background, lime-green element borders, black text, amber used only for highlights and the quality bar's amber band. Terminal output scrolls within its fixed-height viewport rather than growing the page.
 - [ ] Embedded terminal runs the full Module-2 command flow (extract → train → export → `trtexec` → `config.pbtxt`) locally in the tutor-app pod; the new ISL model is served by Triton afterwards.
 - [ ] Embedded terminal rejects a disallowed command (e.g. `kubectl delete pod`) with the helpful allowlist message, and truncates very long output at 500 lines.
 

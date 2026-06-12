@@ -30,3 +30,6 @@ checkpoints/isl/
 # Raw debugging artefacts (HAR captures, kubectl dumps) — keep reports, not these
 Logs/*.har
 Logs/*.txt
+
+# Local Claude Code state (personal settings + agent memory)
+.claude/
