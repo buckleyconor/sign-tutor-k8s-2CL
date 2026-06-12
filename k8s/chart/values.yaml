@@ -30,6 +30,9 @@ tutorApp:
   # time-sliced GPU is mostly consumed by other workloads; serving ASL needs
   # none (the app calls Triton over HTTP). Set >=1 where capacity allows.
   gpu: 0
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits:   { cpu: "2", memory: "4Gi" }
 
 ingress:
   className: public           # microk8s ingress class

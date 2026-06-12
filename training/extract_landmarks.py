@@ -8,6 +8,7 @@ images are processed once; the resulting CSV is reused across training runs.
         --dst languages/asl/landmarks.csv \
         --hands 1 --source-tag kaggle_asl
 """
+
 import argparse
 import csv
 import sys
@@ -26,7 +27,10 @@ _NON_LETTER = {"DEL", "NOTHING", "SPACE"}
 
 
 def extract_from_image_dir(
-    src_dir: Path, hands: int, source_tag: str, out_csv: Path,
+    src_dir: Path,
+    hands: int,
+    source_tag: str,
+    out_csv: Path,
     max_per_class: int | None = None,
 ) -> tuple[int, int]:
     tracker = HandTracker(static_image_mode=True)
@@ -71,11 +75,20 @@ def main():
     parser.add_argument("--dst", type=Path, required=True)
     parser.add_argument("--hands", type=int, choices=[1], default=1)
     parser.add_argument("--source-tag", required=True)
-    parser.add_argument("--max-per-class", type=int, default=None,
-                        help="cap kept samples per letter (subsampling)")
+    parser.add_argument(
+        "--max-per-class",
+        type=int,
+        default=None,
+        help="cap kept samples per letter (subsampling)",
+    )
     args = parser.parse_args()
-    extract_from_image_dir(args.src, args.hands, args.source_tag, args.dst,
-                           max_per_class=args.max_per_class)
+    extract_from_image_dir(
+        args.src,
+        args.hands,
+        args.source_tag,
+        args.dst,
+        max_per_class=args.max_per_class,
+    )
 
 
 if __name__ == "__main__":

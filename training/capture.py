@@ -5,6 +5,7 @@ it uses cv2.VideoCapture(0) and cv2.imshow, which need a real camera device and
 a window. It is NOT runnable inside a headless pod. Writes landmark coordinates
 only (no images), so there are no face-data privacy concerns.
 """
+
 import argparse
 import csv
 import sys
@@ -44,12 +45,26 @@ def capture_letter(
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         feat = build_feature_vector(lang, tracker.process(rgb))
         if feat is None:
-            cv2.putText(frame, "NO HAND", (20, 40), cv2.FONT_HERSHEY_SIMPLEX,
-                        1.0, (0, 0, 255), 2)
+            cv2.putText(
+                frame,
+                "NO HAND",
+                (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                (0, 0, 255),
+                2,
+            )
         else:
             rows.append([letter, condition_label, *feat.tolist()])
-            cv2.putText(frame, f"REC {letter}: {len(rows)}", (20, 40),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+            cv2.putText(
+                frame,
+                f"REC {letter}: {len(rows)}",
+                (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                (0, 255, 0),
+                2,
+            )
         cv2.imshow("capture", frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break

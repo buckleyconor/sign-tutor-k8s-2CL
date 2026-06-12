@@ -32,3 +32,24 @@ jobs:
 
       - name: Run unit tests
         run: pytest tests/unit -q --cov=src --cov-report=term-missing
+
+  lint:
+    name: Lint (ruff + black)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff black
+      - run: ruff check src training tests
+      - run: black --check src training tests
+
+  chart:
+    name: Helm chart renders
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint k8s/chart --set participant=p1 --set host=p1.lab.internal
+      - run: helm template tutor-p1 k8s/chart --set participant=p1 --set host=p1.lab.internal > /dev/null

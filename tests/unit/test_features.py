@@ -7,8 +7,13 @@ from tests.fixtures.synthetic import synthetic_hand
 
 def _lang():
     return Language(
-        name="ASL", code="asl", input_hands=1, classes=list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
-        triton_model_name="asl_classifier", references_dir=None, notes={},
+        name="ASL",
+        code="asl",
+        input_hands=1,
+        classes=list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+        triton_model_name="asl_classifier",
+        references_dir=None,
+        notes={},
     )
 
 

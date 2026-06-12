@@ -3,11 +3,12 @@
 Black background, lime-green element borders, white/grey text, amber for
 highlights only. Retune here without touching layout code.
 """
+
 import gradio as gr
 
-BG = "#000000"      # black background
+BG = "#000000"  # black background
 BORDER = "#32CD32"  # lime green element borders
-TEXT = "#E0E0E0"    # white/grey body text
+TEXT = "#E0E0E0"  # white/grey body text
 ACCENT = "#FFBF00"  # amber — highlights only
 
 CSS = f"""

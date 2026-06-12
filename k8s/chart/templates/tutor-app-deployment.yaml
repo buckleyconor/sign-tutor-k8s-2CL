@@ -27,11 +27,23 @@ spec:
             - { name: TRITON_URL, value: "triton:{{ .Values.triton.httpPort }}" }
           ports:
             - { name: http, containerPort: {{ .Values.tutorApp.port }} }
-          {{- if gt (int .Values.tutorApp.gpu) 0 }}
+          readinessProbe:
+            # Gradio serves the app page once MediaPipe + the registry are loaded.
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
           resources:
+            requests:
+              cpu: {{ .Values.tutorApp.resources.requests.cpu | quote }}
+              memory: {{ .Values.tutorApp.resources.requests.memory | quote }}
             limits:
+              cpu: {{ .Values.tutorApp.resources.limits.cpu | quote }}
+              memory: {{ .Values.tutorApp.resources.limits.memory | quote }}
+              {{- if gt (int .Values.tutorApp.gpu) 0 }}
               {{ .Values.gpuResourceName }}: {{ .Values.tutorApp.gpu }}
-          {{- end }}
+              {{- end }}
           volumeMounts:
             # Shared model repository — read-write here so engines built in this
             # pod (lab ISL flow) land directly in Triton's repository. The app's

@@ -4,6 +4,7 @@ RED   : conf < amber_min OR predicted != target
 AMBER : amber_min <= conf < green_min AND predicted == target
 GREEN : conf >= green_min AND predicted == target, sustained for hold_seconds
 """
+
 import time
 from enum import Enum
 

@@ -1,4 +1,5 @@
 """Feature layer — turn MediaPipe detections into model input vectors."""
+
 import numpy as np
 
 from src.registry import Language

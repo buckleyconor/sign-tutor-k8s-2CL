@@ -3,6 +3,7 @@
 Run with ``python -m src.ui.app``. The webcam is browser-side (HTTPS via the
 NGINX Ingress); the terminal executes server-side inside this pod.
 """
+
 import gradio as gr
 
 from src.lesson.controller import LessonController
@@ -28,7 +29,7 @@ def build_app() -> gr.Blocks:
                 value=default_code,
                 label="Language",
             )
-            lesson = gr.Dropdown(
+            gr.Dropdown(  # registered in the layout on creation; no handler yet
                 choices=[("Alphabet", "alphabet")],
                 value="alphabet",
                 label="Lesson",
@@ -48,8 +49,9 @@ def build_app() -> gr.Blocks:
         # Embedded terminal — bottom 25%, full width (Module 2 lab commands).
         with gr.Row():
             with gr.Column(elem_id="lab-terminal"):
-                term_out = gr.Code(label="Terminal", language="shell",
-                                   interactive=False, lines=10)
+                term_out = gr.Code(
+                    label="Terminal", language="shell", interactive=False, lines=10
+                )
                 term_in = gr.Textbox(
                     label="Command",
                     placeholder="python training/train_classifier.py ...",

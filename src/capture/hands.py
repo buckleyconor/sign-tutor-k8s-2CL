@@ -4,12 +4,16 @@ Outputs 21 landmarks per detected hand. We always run with ``max_hands=2`` even
 though ASL/ISL are one-handed — the cost is negligible and it keeps the capture
 layer language-agnostic.
 """
+
 import numpy as np
 
-try:  # mediapipe is heavy and CPU-only; keep import errors actionable
+try:
     import mediapipe as mp
-except ImportError as exc:  # pragma: no cover - import guard
-    raise ImportError(
+except ModuleNotFoundError as exc:  # pragma: no cover - import guard
+    # Only catch a genuinely-missing package. Other ImportErrors (e.g. a
+    # transitive C-lib failure like "libGL.so.1: cannot open") must propagate
+    # with their real message, not be masked as "mediapipe is required".
+    raise ModuleNotFoundError(
         "mediapipe is required for hand tracking. Install it inside the "
         "tutor-app container (see Dockerfile)."
     ) from exc

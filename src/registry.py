@@ -4,6 +4,7 @@ Every other component reads from the registry. Adding a new sign language is a
 data-only operation: drop a `languages/<code>/config.yaml`, a model, and a
 reference image set; no code changes required.
 """
+
 from dataclasses import dataclass
 from pathlib import Path
 

@@ -1,7 +1,8 @@
 """Data-quality gate — run before training so a bad CSV fails fast.
 
-    python training/check_quality.py datasets/isl_landmarks.csv 63
+python training/check_quality.py datasets/isl_landmarks.csv 63
 """
+
 import sys
 
 import numpy as np

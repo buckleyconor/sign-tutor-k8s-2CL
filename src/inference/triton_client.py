@@ -3,12 +3,14 @@
 Thin HTTP client around a single classifier model. The same interface scales
 from a single-GPU node to a fleet — only the URL changes.
 """
+
 import numpy as np
 
 try:
     import tritonclient.http as httpclient
-except ImportError as exc:  # pragma: no cover - import guard
-    raise ImportError(
+except ModuleNotFoundError as exc:  # pragma: no cover - import guard
+    # Catch only a missing package; let other ImportErrors surface their cause.
+    raise ModuleNotFoundError(
         "tritonclient[http] is required. Install it inside the tutor-app "
         "container (see Dockerfile)."
     ) from exc

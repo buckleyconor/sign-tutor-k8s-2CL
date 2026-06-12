@@ -4,6 +4,7 @@ Each submitted line runs as a subprocess inside the tutor-app pod, operating on
 the volumes mounted there (including the shared ``triton-models`` PVC). Output is
 streamed back line-by-line so long training runs show progress live.
 """
+
 import os
 import shlex
 import subprocess
@@ -31,9 +32,8 @@ def _reject(cmd: str) -> str | None:
     if prog == "kubectl" and (
         len(tokens) < 2 or tokens[1] not in config.KUBECTL_READONLY_VERBS
     ):
-        return (
-            "kubectl is inspection-only here. Allowed verbs: "
-            + ", ".join(sorted(config.KUBECTL_READONLY_VERBS))
+        return "kubectl is inspection-only here. Allowed verbs: " + ", ".join(
+            sorted(config.KUBECTL_READONLY_VERBS)
         )
     return None
 
@@ -78,7 +78,7 @@ def run_command(cmd: str, history: str = ""):
     timer.start()
     truncated = False
     try:
-        for line in proc.stdout:                       # streams line-by-line
+        for line in proc.stdout:  # streams line-by-line
             lines.append(line.rstrip("\n"))
             if len(lines) > config.MAX_OUTPUT_LINES:
                 lines = lines[: config.MAX_OUTPUT_LINES]
@@ -86,7 +86,7 @@ def run_command(cmd: str, history: str = ""):
                 proc.kill()
                 truncated = True
                 break
-            yield render(lines), ""                    # live update to the UI
+            yield render(lines), ""  # live update to the UI
         proc.wait()
     finally:
         timer.cancel()

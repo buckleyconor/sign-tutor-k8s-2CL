@@ -4,6 +4,7 @@
         --checkpoint checkpoints/isl/best.pt \
         --output languages/isl/model.onnx
 """
+
 import argparse
 import sys
 from pathlib import Path
@@ -40,8 +41,11 @@ def export(checkpoint: Path, output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     dummy = torch.randn(1, 63)
     torch.onnx.export(
-        model, dummy, str(output),
-        input_names=["input"], output_names=["output"],
+        model,
+        dummy,
+        str(output),
+        input_names=["input"],
+        output_names=["output"],
         dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
         opset_version=17,
     )

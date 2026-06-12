@@ -3,6 +3,7 @@
 run_command is a generator that streams the buffer; we drain it and inspect the
 final terminal text.
 """
+
 from src.terminal import config, executor
 from src.terminal.executor import run_command
 

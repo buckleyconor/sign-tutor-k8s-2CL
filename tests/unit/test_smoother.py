@@ -34,7 +34,7 @@ def test_confidence_average_class_only():
 
 def test_window_eviction():
     s = PredictionSmoother(window=4)
-    s.update(1, 0.9)            # will be evicted
+    s.update(1, 0.9)  # will be evicted
     for _ in range(4):
         s.update(0, 0.9)
     idx, _ = s.smoothed()

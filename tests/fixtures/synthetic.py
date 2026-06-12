@@ -1,4 +1,5 @@
 """Deterministic synthetic landmark fixtures for unit tests."""
+
 import numpy as np
 
 

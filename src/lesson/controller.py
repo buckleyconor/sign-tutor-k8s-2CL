@@ -8,6 +8,7 @@ The fuzzy bits (landmark overlay drawing, celebration animation) are left as
 clearly marked TODOs — they do not affect the deterministic core that the test
 suite exercises.
 """
+
 from __future__ import annotations
 
 import os
@@ -25,7 +26,7 @@ from src.registry import Language
 
 _LIGHT_COLOURS = {
     Light.RED: "#E74C3C",
-    Light.AMBER: "#FFBF00",   # aligned to the UI accent
+    Light.AMBER: "#FFBF00",  # aligned to the UI accent
     Light.GREEN: "#27AE60",
 }
 
@@ -46,8 +47,7 @@ def _load_thresholds(path: Path = Path("configs/thresholds.yaml")) -> dict:
 
 
 class LessonController:
-    def __init__(self, languages: dict[str, Language],
-                 triton_url: str | None = None):
+    def __init__(self, languages: dict[str, Language], triton_url: str | None = None):
         self._languages = languages
         self._triton_url = triton_url or os.environ.get("TRITON_URL", "triton:8000")
         self._cfg = _load_thresholds()
@@ -158,7 +158,9 @@ class LessonController:
         )
         if completed:
             self.next_letter()
-            status = f"✅ **{lang.classes[s_idx]}** complete! Next: {self.current_letter}"
+            status = (
+                f"✅ **{lang.classes[s_idx]}** complete! Next: {self.current_letter}"
+            )
         # TODO: overlay landmarks on `frame` before returning.
         return frame, reference, render_light(light), status
 

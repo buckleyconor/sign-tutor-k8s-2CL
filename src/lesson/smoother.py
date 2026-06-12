@@ -4,6 +4,7 @@ Raw predictions jitter heavily. The displayed prediction is the modal class over
 a rolling window; the displayed confidence is the average confidence for that
 modal class. This eliminates flicker without noticeable lag.
 """
+
 from collections import Counter, deque
 
 import numpy as np

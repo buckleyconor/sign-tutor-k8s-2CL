@@ -16,8 +16,9 @@ TARGET = 5
 
 
 def _scorer(clock=None):
-    return TrafficLightScorer(target_idx=TARGET, hold_seconds=1.0,
-                              clock=clock or (lambda: 0.0))
+    return TrafficLightScorer(
+        target_idx=TARGET, hold_seconds=1.0, clock=clock or (lambda: 0.0)
+    )
 
 
 def test_wrong_class_is_red():
@@ -53,9 +54,9 @@ def test_completion_after_hold():
 def test_amber_resets_green_timer():
     clk = FakeClock()
     s = _scorer(clock=clk)
-    s.evaluate(TARGET, 0.9)        # start green
+    s.evaluate(TARGET, 0.9)  # start green
     clk.advance(0.6)
-    s.evaluate(TARGET, 0.65)       # drop to amber -> reset
+    s.evaluate(TARGET, 0.65)  # drop to amber -> reset
     clk.advance(0.6)
     light, done = s.evaluate(TARGET, 0.9)
     assert light is Light.GREEN and not done  # timer restarted, < 1.0s elapsed

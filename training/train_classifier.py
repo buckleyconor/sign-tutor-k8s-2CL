@@ -10,6 +10,7 @@ Augmentation is automatic — landmark-space transforms are applied to every
 training batch, so each epoch the model sees a slightly different version of
 every sample.
 """
+
 import argparse
 import csv
 import sys
@@ -39,8 +40,9 @@ MIN_BATCHES_PER_EPOCH = 16
 
 
 class LandmarkDataset(Dataset):
-    def __init__(self, feats: np.ndarray, labels: np.ndarray, augment: bool,
-                 mirror: bool = False):
+    def __init__(
+        self, feats: np.ndarray, labels: np.ndarray, augment: bool, mirror: bool = False
+    ):
         self._feats = feats.astype(np.float32)
         self._labels = labels.astype(np.int64)
         self._augment = augment
@@ -100,20 +102,26 @@ def train(args) -> None:
     train_idx, val_idx = _stratified_split(labels, args.val_split)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Training on {device}; {len(classes)} classes; "
-          f"{len(train_idx)} train / {len(val_idx)} val samples")
+    print(
+        f"Training on {device}; {len(classes)} classes; "
+        f"{len(train_idx)} train / {len(val_idx)} val samples"
+    )
 
     # Shrink the batch on small datasets so there are enough updates per epoch.
     eff_batch = min(args.batch_size, max(8, len(train_idx) // MIN_BATCHES_PER_EPOCH))
     if eff_batch != args.batch_size:
-        print(f"Small dataset: batch_size {args.batch_size} -> {eff_batch} "
-              f"(~{len(train_idx) // eff_batch} batches/epoch) for adequate "
-              f"gradient steps.")
+        print(
+            f"Small dataset: batch_size {args.batch_size} -> {eff_batch} "
+            f"(~{len(train_idx) // eff_batch} batches/epoch) for adequate "
+            f"gradient steps."
+        )
 
     train_loader = DataLoader(
-        LandmarkDataset(feats[train_idx], labels[train_idx], augment=True,
-                        mirror=args.mirror),
-        batch_size=eff_batch, shuffle=True,
+        LandmarkDataset(
+            feats[train_idx], labels[train_idx], augment=True, mirror=args.mirror
+        ),
+        batch_size=eff_batch,
+        shuffle=True,
     )
     val_loader = DataLoader(
         LandmarkDataset(feats[val_idx], labels[val_idx], augment=False),
@@ -145,17 +153,22 @@ def train(args) -> None:
                 running += loss.item() * len(yb)
             train_loss = running / len(train_idx)
             val_loss, val_acc = _evaluate(model, val_loader, device, loss_fn)
-            print(f"epoch {epoch:3d}  train_loss={train_loss:.4f}  "
-                  f"val_loss={val_loss:.4f}  val_acc={val_acc:.3f}")
-            writer.writerow([epoch, f"{train_loss:.4f}", f"{val_loss:.4f}",
-                             f"{val_acc:.4f}"])
+            print(
+                f"epoch {epoch:3d}  train_loss={train_loss:.4f}  "
+                f"val_loss={val_loss:.4f}  val_acc={val_acc:.3f}"
+            )
+            writer.writerow(
+                [epoch, f"{train_loss:.4f}", f"{val_loss:.4f}", f"{val_acc:.4f}"]
+            )
             logf.flush()
             if val_acc >= best_acc:
                 best_acc = val_acc
                 torch.save(
-                    {"model_state": model.state_dict(),
-                     "num_classes": len(classes),
-                     "classes": classes},
+                    {
+                        "model_state": model.state_dict(),
+                        "num_classes": len(classes),
+                        "classes": classes,
+                    },
                     ckpt_dir / "best.pt",
                 )
     print(f"Best val accuracy: {best_acc:.3f}  ->  {ckpt_dir / 'best.pt'}")
@@ -168,12 +181,19 @@ def main():
     p.add_argument("--checkpoint-dir", type=Path, required=True)
     p.add_argument("--csv-file", type=Path, required=True)
     p.add_argument("--val-split", type=float, default=0.2)
-    p.add_argument("--batch-size", type=int, default=256,
-                   help="auto-reduced on small datasets to keep enough steps")
+    p.add_argument(
+        "--batch-size",
+        type=int,
+        default=256,
+        help="auto-reduced on small datasets to keep enough steps",
+    )
     p.add_argument("--lr", type=float, default=1e-3)
-    p.add_argument("--mirror", action="store_true",
-                   help="enable mirror-flip augmentation (off by default; see "
-                        "training/augment.py)")
+    p.add_argument(
+        "--mirror",
+        action="store_true",
+        help="enable mirror-flip augmentation (off by default; see "
+        "training/augment.py)",
+    )
     train(p.parse_args())
 
 

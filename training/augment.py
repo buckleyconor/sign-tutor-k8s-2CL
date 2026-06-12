@@ -9,11 +9,13 @@ it ("one-handed signs are mostly handedness-agnostic"), but an ISL ablation
 showed it consistently *lowers* accuracy (~1-4 pts) — a mirrored handshape can
 resemble a different letter. Enable it only for a dataset known to benefit.
 """
+
 import numpy as np
 
 
-def augment_one_hand(vec: np.ndarray, rng: np.random.Generator,
-                     mirror: bool = False) -> np.ndarray:
+def augment_one_hand(
+    vec: np.ndarray, rng: np.random.Generator, mirror: bool = False
+) -> np.ndarray:
     """``vec``: (63,) normalised landmark vector. Returns an augmented (63,).
 
     ``mirror``: if True, flip x with 50% probability (off by default).
