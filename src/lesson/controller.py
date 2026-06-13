@@ -123,7 +123,13 @@ class LessonController:
         self._triton_url = triton_url or os.environ.get("TRITON_URL", "triton:8000")
         self._cfg = _load_thresholds()
         self._tracker = HandTracker(max_hands=2)
-        self._clients: dict[str, TritonClassifier] = {}
+        # tritonclient[http] is built on geventhttpclient, whose greenlet hub is
+        # bound to the thread that created the client. The webcam stream runs
+        # with concurrency_limit=30, so on_frame is dispatched across many Gradio
+        # worker threads; a single shared client then raises "greenlet.error:
+        # cannot switch to a different thread". Hold one client PER THREAD so
+        # each gevent hub is only ever touched by the thread that made it.
+        self._clients = threading.local()
         self._references: dict[str, dict[str, np.ndarray]] = {}
 
         # Serialises all access to MediaPipe + the smoother/scorer/index, which
@@ -162,11 +168,15 @@ class LessonController:
 
     # ------------------------------------------------------------------ state
     def _client_for(self, lang: Language) -> TritonClassifier:
-        if lang.code not in self._clients:
-            self._clients[lang.code] = TritonClassifier(
+        # Per-thread cache (see ``self._clients`` in __init__ for why).
+        cache = getattr(self._clients, "by_code", None)
+        if cache is None:
+            cache = self._clients.by_code = {}
+        if lang.code not in cache:
+            cache[lang.code] = TritonClassifier(
                 url=self._triton_url, model_name=lang.triton_model_name
             )
-        return self._clients[lang.code]
+        return cache[lang.code]
 
     def _reference_image(self, lang: Language, letter: str) -> np.ndarray | None:
         cache = self._references.setdefault(lang.code, {})
