@@ -15,6 +15,7 @@ import os
 import threading
 from pathlib import Path
 
+import gradio as gr
 import numpy as np
 import yaml
 
@@ -49,6 +50,31 @@ def _quality_colour(pct: float) -> str:
     if pct <= 75:
         return "#FFBF00"
     return "#27AE60"
+
+
+def render_target_letter(letter: str) -> str:
+    """Heading for the reference panel: ``Target Letter: A``."""
+    return (
+        '<div style="font-size:16pt;font-weight:600;color:#111;">'
+        f'Target Letter: <span style="color:#32CD32;">{letter}</span>'
+        "</div>"
+    )
+
+
+def render_progress(completed: int, total: int) -> str:
+    """Dotted progress readout: filled dots for completed letters, ``o`` for the
+    rest, e.g. ``Progress: ●●●ooooo… (3/26)``."""
+    total = max(0, int(total))
+    completed = max(0, min(total, int(completed)))
+    done = "●" * completed
+    todo = "o" * (total - completed)
+    return (
+        '<div style="font-family:monospace;font-size:14pt;color:#111;">'
+        f'Progress: <span style="color:#32CD32;">{done}</span>'
+        f'<span style="color:#999;">{todo}</span>'
+        f'  <span style="font-size:10pt;">({completed}/{total})</span>'
+        "</div>"
+    )
 
 
 def render_quality_bar(pct: float) -> str:
@@ -101,6 +127,12 @@ class LessonController:
         self._letter_idx: int = 0
         self._quality_ema: float = 0.0  # smoothed 0-1 quality for the bar
         self._ema_alpha: float = float(self._cfg.get("quality_ema_alpha", 0.35))
+        # The "Next letter" button stays locked (grey) until the quality bar
+        # crosses this threshold, then latches unlocked (lime) until the user
+        # navigates. 90% matches the target marker on the bar.
+        self._unlock_threshold: float = float(self._cfg.get("unlock_quality_pct", 90.0))
+        self._unlocked: bool = False
+        self._completed: int = 0  # letters finished (Next clicked while unlocked)
         self._smoother = PredictionSmoother(
             window=int(self._cfg.get("smoothing_window_frames", 15))
         )
@@ -135,6 +167,8 @@ class LessonController:
         self._active = self._languages[code]
         self._letter_idx = 0
         self._quality_ema = 0.0
+        self._unlocked = False
+        self._completed = 0
         self._smoother.reset()
         self._new_scorer()
 
@@ -159,6 +193,7 @@ class LessonController:
             return
         self._letter_idx = (self._letter_idx + 1) % len(self._active.classes)
         self._quality_ema = 0.0
+        self._unlocked = False
         self._smoother.reset()
         self._new_scorer()
 
@@ -166,16 +201,42 @@ class LessonController:
         self.next_letter()
 
     # ----------------------------------------------------------- UI view hooks
-    # These return ``(reference_image, quality_html, status_md)`` so the webcam
-    # stream is no longer the only thing that can paint the reference panel.
-    def current_view(self) -> tuple[np.ndarray | None, str, str]:
+    # Navigation hooks paint the reference panel and *re-lock* the Next button.
+    # They return ``(reference_image, quality_html, status_md, next_btn_update)``.
+    # The webcam stream (``on_frame``) deliberately does NOT repaint the
+    # reference — pushing a fresh image 5x/second kept the "Sign this letter"
+    # panel perpetually reloading (blank) and saturated the session's event
+    # channel, which in turn made Skip take tens of seconds to land.
+    def current_view(self) -> tuple:
+        """``(target_letter, reference, progress, quality, status, next_btn)``."""
+        locked = gr.update(interactive=False)
         if self._active is None:
-            return None, render_quality_bar(0.0), ""
+            return (
+                render_target_letter("—"),
+                None,
+                render_progress(0, 0),
+                render_quality_bar(0.0),
+                "",
+                locked,
+            )
+        total = len(self._active.classes)
         reference = self._reference_image(self._active, self.current_letter)
         status = (
             f"Sign **{self.current_letter}** — match the reference, then hold steady."
         )
-        return reference, render_quality_bar(self._quality_ema), status
+        return (
+            render_target_letter(self.current_letter),
+            reference,
+            render_progress(self._completed, total),
+            render_quality_bar(self._quality_ema),
+            status,
+            locked,
+        )
+
+    def initial_view(self) -> tuple:
+        """Same as ``current_view`` but with the app's opening status prompt."""
+        tl, ref, prog, quality, _status, locked = self.current_view()
+        return tl, ref, prog, quality, "<-- Click the record button to begin!", locked
 
     def on_language_change(self, code: str):
         with self._lock:
@@ -184,6 +245,10 @@ class LessonController:
 
     def on_next(self):
         with self._lock:
+            # Only a *completed* letter (Next clicked while unlocked) counts
+            # toward progress; Skip deliberately does not.
+            if self._unlocked:
+                self._completed += 1
             self.next_letter()
             return self.current_view()
 
@@ -196,17 +261,21 @@ class LessonController:
     def on_frame(self, frame: np.ndarray, lang_code: str):
         """Process one webcam frame.
 
-        Returns ``(reference_image, quality_html, status_md)``. The webcam
-        preview renders client-side, so we no longer echo the frame back to the
-        input component (that churned the stream and bought nothing while the
-        landmark overlay is still a TODO). The whole body is lock-guarded
-        because MediaPipe's graph is not thread-safe.
+        Returns ``(quality_html, status_md, next_btn_update)`` — deliberately
+        lightweight. The reference image is owned by the navigation hooks, not
+        the stream, so the "Sign this letter" panel stays put and the per-frame
+        payload is tiny (this is what keeps Skip/Next responsive). The webcam
+        preview renders client-side, so we don't echo the frame back either.
+
+        Advancing letters is now manual: when the quality bar crosses the
+        unlock threshold the Next button latches active (lime); the user clicks
+        it to move on. The whole body is lock-guarded because MediaPipe's graph
+        is not thread-safe.
         """
         with self._lock:
             if self._active is None or lang_code != self._active.code:
                 self.set_language(lang_code)
             lang = self._active
-            reference = self._reference_image(lang, self.current_letter)
 
             target_q = 0.0  # 0-1 confidence *for the target class* this frame
             status = f"Sign **{self.current_letter}** — show your hand to the camera."
@@ -223,27 +292,28 @@ class LessonController:
                     status = "Hold steady…"
                 else:
                     s_idx, s_conf = smoothed
-                    _light, completed = self._scorer.evaluate(s_idx, s_conf)
                     target_q = s_conf if s_idx == self._letter_idx else 0.0
                     status = (
                         f"Sign **{self.current_letter}** — "
                         f"predicted **{lang.classes[s_idx]}** ({s_conf:.0%})"
                     )
-                    if completed:
-                        self.next_letter()  # resets _quality_ema to 0
-                        reference = self._reference_image(lang, self.current_letter)
-                        target_q = 0.0
-                        status = (
-                            f"✅ **{lang.classes[s_idx]}** complete! "
-                            f"Next: {self.current_letter}"
-                        )
 
             # Ease the bar toward this frame's quality so it grows/recedes
             # smoothly instead of snapping.
             self._quality_ema += self._ema_alpha * (
                 target_q * 100.0 - self._quality_ema
             )
-            return reference, render_quality_bar(self._quality_ema), status
+
+            # Latch the Next button active once (lime); navigation re-locks it.
+            # Emitting an update only on the transition avoids re-rendering the
+            # button on every frame.
+            btn_update = gr.update()
+            if not self._unlocked and self._quality_ema >= self._unlock_threshold:
+                self._unlocked = True
+                status = f"✅ Great — click **Next letter** to continue ({self.current_letter} ✓)"
+                btn_update = gr.update(interactive=True)
+
+            return render_quality_bar(self._quality_ema), status, btn_update
 
 
 def _softmax(x: np.ndarray) -> np.ndarray:
