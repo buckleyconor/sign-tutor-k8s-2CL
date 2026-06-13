@@ -4,6 +4,9 @@ Run with ``python -m src.ui.app``. The webcam is browser-side (HTTPS via the
 NGINX Ingress); the terminal executes server-side inside this pod.
 """
 
+import base64
+from pathlib import Path
+
 import gradio as gr
 
 from src.lesson.controller import (
@@ -18,7 +21,40 @@ from src.ui.theme import CSS, THEME
 
 LANGS = load_registry()
 
-TITLE_TEXT = "Sign Language Tutor app, Powered by Dell Technologies and NVIDIA"
+_LOGO_DIR = Path("Logos")
+
+
+def _logo_data_uri(filename: str) -> str:
+    """Inline a PNG logo as a base64 data URI (no runtime file-serving needed).
+    Returns '' if the file is missing so the title still renders off-cluster."""
+    try:
+        data = base64.b64encode((_LOGO_DIR / filename).read_bytes()).decode()
+        return f"data:image/png;base64,{data}"
+    except OSError:
+        return ""
+
+
+def _title_html() -> str:
+    """Title bar: heading on the left, Dell + NVIDIA logos pinned top-right."""
+    dell = _logo_data_uri("DellTech_Logo_Prm_Wht_rgb.png")
+    nvidia = _logo_data_uri("nvidia-logo-horiz-1cwht-16x9.png")
+    logos = "".join(
+        f'<img src="{uri}" alt="{alt}" style="height:34px;width:auto;"/>'
+        for uri, alt in ((dell, "Dell Technologies"), (nvidia, "NVIDIA"))
+        if uri
+    )
+    return (
+        '<div style="display:flex;align-items:center;justify-content:space-between;'
+        'width:100%;gap:16px;">'
+        '<span style="font-size:16pt;font-weight:600;color:#fff;">'
+        "Sign Language Tutor, Train your first vision model"
+        "</span>"
+        '<span style="display:flex;align-items:center;gap:24px;flex:0 0 auto;">'
+        f"{logos}</span>"
+        "</div>"
+    )
+
+
 # Scroll the embedded terminal to the newest line after each command runs.
 _SCROLL_TERMINAL_JS = (
     "() => { setTimeout(() => {"
@@ -32,7 +68,7 @@ def build_app() -> gr.Blocks:
     default_code = next(iter(LANGS), "asl")
 
     with gr.Blocks(title="Sign Language Tutor", theme=THEME, css=CSS) as demo:
-        gr.HTML(TITLE_TEXT, elem_id="app-title")
+        gr.HTML(_title_html(), elem_id="app-title")
         with gr.Row(elem_id="lang-lesson"):
             lang = gr.Dropdown(
                 choices=[(lng.name, lng.code) for lng in LANGS.values()],
@@ -77,15 +113,24 @@ def build_app() -> gr.Blocks:
         with gr.Row():
             with gr.Column(elem_id="lab-terminal"):
                 term_out = gr.Code(
-                    label="Terminal", language="shell", interactive=False, lines=20
+                    label="Terminal",
+                    language="shell",
+                    interactive=False,
+                    lines=20,
+                    elem_id="terminal-output",
                 )
-                term_in = gr.Textbox(
-                    label="Enter your Commands here",
-                    placeholder="python training/train_classifier.py ...",
-                    elem_id="command-input",
-                    lines=2,
-                    max_lines=12,  # accept multi-line / pasted commands
-                )
+                with gr.Row():
+                    term_in = gr.Textbox(
+                        label="Enter your Commands here",
+                        placeholder="python training/train_classifier.py ...",
+                        elem_id="command-input",
+                        lines=2,
+                        max_lines=12,  # accept multi-line / pasted commands
+                        scale=8,
+                    )
+                    exec_btn = gr.Button(
+                        "Execute Command", elem_id="execute-btn", scale=1
+                    )
 
         # Navigation hooks own the reference panel + Next-button lock state.
         nav_views = [target_letter, target, progress, quality, status, next_btn]
@@ -93,16 +138,20 @@ def build_app() -> gr.Blocks:
         # button-unlock update — no reference image. Pushing the image here is
         # what made the panel reload-blank and starved Skip in the HAR.
         stream_views = [quality, status, next_btn]
-        # Throttle to a rate the MediaPipe+Triton pipeline can sustain and pin to
-        # one in-flight frame, so the queue can't back up into the freeze/spinner
-        # seen in the HAR. The frame is no longer echoed to `cam`.
+        # Continuous capture. ``concurrency_limit`` MUST be >1: with =1 a single
+        # streaming session holds the only worker slot for the whole time_limit
+        # window, so the webcam sends one frame then stalls for ~30s (the spinner
+        # in debug_2.har). MediaPipe thread-safety is handled by the controller's
+        # lock instead. ``time_limit`` is large so the stream doesn't reset/rejoin
+        # mid-lesson. The frame is not echoed back to `cam` (browser renders it).
         cam.stream(
             controller.on_frame,
             inputs=[cam, lang],
             outputs=stream_views,
-            stream_every=0.2,
-            concurrency_limit=1,
+            stream_every=0.15,
+            concurrency_limit=30,
             concurrency_id="frame",
+            time_limit=3600,
             show_progress="hidden",
         )
         # Paint the reference letter on load and on every navigation — no longer
@@ -112,9 +161,14 @@ def build_app() -> gr.Blocks:
         lang.change(controller.on_language_change, inputs=lang, outputs=nav_views)
         skip_btn.click(controller.on_skip, outputs=nav_views)
         next_btn.click(controller.on_next, outputs=nav_views)
-        term_in.submit(
-            run_command, inputs=[term_in, term_out], outputs=[term_out, term_in]
-        ).then(None, None, None, js=_SCROLL_TERMINAL_JS)
+        # Both Enter and the "Execute Command" button run the typed command.
+        run_io = dict(inputs=[term_in, term_out], outputs=[term_out, term_in])
+        term_in.submit(run_command, **run_io).then(
+            None, None, None, js=_SCROLL_TERMINAL_JS
+        )
+        exec_btn.click(run_command, **run_io).then(
+            None, None, None, js=_SCROLL_TERMINAL_JS
+        )
     return demo
 
 

@@ -234,8 +234,13 @@ class LessonController:
         )
 
     def initial_view(self) -> tuple:
-        """Same as ``current_view`` but with the app's opening status prompt."""
-        tl, ref, prog, quality, _status, locked = self.current_view()
+        """Fired on every page load/refresh. Resets the lesson to the first
+        letter (A) so a refresh always restarts from the beginning, then returns
+        ``current_view`` with the app's opening status prompt."""
+        with self._lock:
+            if self._active is not None:
+                self.set_language(self._active.code)  # back to letter 0, progress 0
+            tl, ref, prog, quality, _status, locked = self.current_view()
         return tl, ref, prog, quality, "<-- Click the record button to begin!", locked
 
     def on_language_change(self, code: str):

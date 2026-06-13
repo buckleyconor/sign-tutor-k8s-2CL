@@ -56,24 +56,36 @@ CSS = f"""
 #live-feed, #live-feed .block {{ background: {BLACK} !important; }}
 #live-feed, #live-feed * {{ color: {WHITE} !important; }}
 
-/* Embedded terminal: black, fixed-height viewport that scrolls (auto-scrolled
-   to the newest line by JS in ui/app.py) instead of growing. */
-#lab-terminal .cm-editor, #lab-terminal .cm-scroller,
-#lab-terminal .cm-content, #lab-terminal .cm-gutters {{
+/* Embedded terminal output: black on load and always (block + every CodeMirror
+   layer), auto-scrolled to the newest line by JS in ui/app.py. The "Terminal"
+   label is forced white so it stays readable on the black panel. */
+#terminal-output {{ background: {BLACK} !important; }}
+#terminal-output .cm-editor, #terminal-output .cm-scroller,
+#terminal-output .cm-content, #terminal-output .cm-gutters,
+#terminal-output .cm-line {{
     background: {BLACK} !important;
-    color: {WHITE};
 }}
-#lab-terminal .cm-editor {{ max-height: {TERMINAL_HEIGHT}; }}
-#lab-terminal .cm-scroller {{
+#terminal-output, #terminal-output * {{ color: {WHITE} !important; }}
+#terminal-output .cm-editor {{ max-height: {TERMINAL_HEIGHT}; }}
+#terminal-output .cm-scroller {{
     max-height: {TERMINAL_HEIGHT};
     overflow: auto;
 }}
-/* Command input: black box, white monospace text. */
-#command-input textarea, #lab-terminal #command-input textarea {{
+/* Command input: black box, white monospace text; the label is black. */
+#command-input textarea {{
     max-height: {TERMINAL_HEIGHT};
     overflow: auto;
     background: {BLACK} !important; color: {WHITE} !important;
     font-family: monospace; border: 1px solid {BORDER} !important;
+}}
+#command-input label, #command-input .label-wrap span {{
+    color: {TEXT} !important;
+}}
+/* "Execute Command" button: lime green, black text. */
+#execute-btn button {{
+    background: {LIME} !important;
+    color: {TEXT} !important;
+    border: 1px solid {LIME} !important;
 }}
 
 /* Quality bar (replaces the traffic light). Smoothness = controller EMA +
