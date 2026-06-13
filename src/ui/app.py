@@ -5,6 +5,8 @@ NGINX Ingress); the terminal executes server-side inside this pod.
 """
 
 import base64
+import logging
+import os
 from pathlib import Path
 
 import gradio as gr
@@ -173,4 +175,16 @@ def build_app() -> gr.Blocks:
 
 
 if __name__ == "__main__":
-    build_app().launch(server_name="0.0.0.0", server_port=7860)
+    # Line-buffered, timestamped logs to stdout so `kubectl logs deploy/tutor-app`
+    # shows the per-frame diagnostics and any on_frame traceback in real time.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        force=True,
+    )
+    # show_error surfaces server-side exceptions to the browser too (lab/debug
+    # convenience). Disable for a hardened production deploy.
+    show_error = os.environ.get("GRADIO_SHOW_ERROR", "1") not in ("0", "false", "")
+    build_app().launch(
+        server_name="0.0.0.0", server_port=7860, show_error=show_error
+    )

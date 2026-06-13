@@ -11,8 +11,10 @@ suite exercises.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
+import time
 from pathlib import Path
 
 import gradio as gr
@@ -25,6 +27,13 @@ from src.inference.triton_client import TritonClassifier
 from src.lesson.scorer import Light, TrafficLightScorer
 from src.lesson.smoother import PredictionSmoother
 from src.registry import Language
+
+log = logging.getLogger("tutor.controller")
+
+# Verbose per-frame diagnostics (frame shape, per-step timing, hand counts).
+# On by default while we chase the streaming failure; set TUTOR_FRAME_DEBUG=0 to
+# quieten it. Errors are always logged regardless of this flag.
+_FRAME_DEBUG = os.environ.get("TUTOR_FRAME_DEBUG", "1") not in ("0", "false", "")
 
 _LIGHT_COLOURS = {
     Light.RED: "#E74C3C",
@@ -117,10 +126,12 @@ class LessonController:
         self._clients: dict[str, TritonClassifier] = {}
         self._references: dict[str, dict[str, np.ndarray]] = {}
 
-        # MediaPipe's graph is not thread-safe and navigation mutates the same
-        # smoother/scorer/index a streaming frame reads. One participant per pod,
-        # but multiple tabs (and the frame vs. button race) still need this lock.
-        # The webcam stream is also pinned to concurrency_limit=1 in ui/app.py.
+        # Serialises all access to MediaPipe + the smoother/scorer/index, which
+        # streaming frames and navigation (Skip/Next) both touch. The webcam
+        # stream runs with concurrency_limit=30 (ui/app.py), so on_frame can be
+        # dispatched from several Gradio worker threads — this lock is what makes
+        # that safe. If logs pin the failure on MediaPipe being called across
+        # threads, the next step is to pin frame processing to one thread.
         self._lock = threading.Lock()
 
         self._active: Language | None = None
@@ -137,8 +148,17 @@ class LessonController:
             window=int(self._cfg.get("smoothing_window_frames", 15))
         )
         self._scorer: TrafficLightScorer | None = None
+        # Streaming diagnostics.
+        self._frame_count: int = 0
+        self._error_count: int = 0
         if languages:
             self.set_language(next(iter(languages)))
+        log.info(
+            "LessonController ready: triton_url=%s languages=%s frame_debug=%s",
+            self._triton_url,
+            list(languages),
+            _FRAME_DEBUG,
+        )
 
     # ------------------------------------------------------------------ state
     def _client_for(self, lang: Language) -> TritonClassifier:
@@ -278,6 +298,23 @@ class LessonController:
         is not thread-safe.
         """
         with self._lock:
+            self._frame_count += 1
+            n = self._frame_count
+            # Log the first few frames in full, then 1-in-50, so the pod logs
+            # show the stream is alive without flooding.
+            verbose = _FRAME_DEBUG and (n <= 5 or n % 50 == 0)
+            if verbose:
+                shape = None if frame is None else getattr(frame, "shape", "n/a")
+                dtype = None if frame is None else getattr(frame, "dtype", "n/a")
+                log.info(
+                    "on_frame #%d thread=%s lang=%s frame_shape=%s dtype=%s",
+                    n,
+                    threading.current_thread().name,
+                    lang_code,
+                    shape,
+                    dtype,
+                )
+
             if self._active is None or lang_code != self._active.code:
                 self.set_language(lang_code)
             lang = self._active
@@ -285,23 +322,64 @@ class LessonController:
             target_q = 0.0  # 0-1 confidence *for the target class* this frame
             status = f"Sign **{self.current_letter}** — show your hand to the camera."
 
-            detections = self._tracker.process(frame) if frame is not None else []
-            feat = build_feature_vector(lang, detections)
-            if feat is not None:
-                logits = self._client_for(lang).infer(feat)
-                probs = _softmax(logits)
-                pred_idx = int(np.argmax(probs))
-                self._smoother.update(pred_idx, float(probs[pred_idx]))
-                smoothed = self._smoother.smoothed()
-                if smoothed is None:
-                    status = "Hold steady…"
-                else:
-                    s_idx, s_conf = smoothed
-                    target_q = s_conf if s_idx == self._letter_idx else 0.0
-                    status = (
-                        f"Sign **{self.current_letter}** — "
-                        f"predicted **{lang.classes[s_idx]}** ({s_conf:.0%})"
+            # Each pipeline stage is isolated so a failure (a) names the culprit
+            # in the logs and (b) does NOT raise out of the handler — a raised
+            # exception makes Gradio mark the whole stream "Error" and stop
+            # delivering output (the silent-stream failure seen in diagnostic_3).
+            try:
+                t0 = time.perf_counter()
+                detections = self._tracker.process(frame) if frame is not None else []
+                t_track = time.perf_counter() - t0
+
+                feat = build_feature_vector(lang, detections)
+                if verbose:
+                    log.info(
+                        "  frame #%d hands=%d feat=%s track=%.1fms",
+                        n,
+                        len(detections),
+                        None if feat is None else f"{feat.shape}",
+                        t_track * 1000,
                     )
+
+                if feat is not None:
+                    t1 = time.perf_counter()
+                    logits = self._client_for(lang).infer(feat)
+                    t_infer = time.perf_counter() - t1
+                    probs = _softmax(logits)
+                    pred_idx = int(np.argmax(probs))
+                    self._smoother.update(pred_idx, float(probs[pred_idx]))
+                    smoothed = self._smoother.smoothed()
+                    if smoothed is None:
+                        status = "Hold steady…"
+                    else:
+                        s_idx, s_conf = smoothed
+                        target_q = s_conf if s_idx == self._letter_idx else 0.0
+                        status = (
+                            f"Sign **{self.current_letter}** — "
+                            f"predicted **{lang.classes[s_idx]}** ({s_conf:.0%})"
+                        )
+                    if verbose:
+                        log.info(
+                            "  frame #%d infer=%.1fms pred=%s conf=%.2f",
+                            n,
+                            t_infer * 1000,
+                            lang.classes[pred_idx],
+                            float(probs[pred_idx]),
+                        )
+            except Exception:
+                self._error_count += 1
+                # Full traceback to the pod logs; rate-limited so a persistent
+                # failure doesn't spam, but the first occurrences are captured.
+                if self._error_count <= 20 or self._error_count % 100 == 0:
+                    log.exception(
+                        "on_frame #%d FAILED (error #%d) lang=%s — keeping stream alive",
+                        n,
+                        self._error_count,
+                        lang_code,
+                    )
+                # Surface a short hint in the UI without killing the stream.
+                status = "⚠️ Detection error — see server logs (tutor-app)."
+                return render_quality_bar(self._quality_ema), status, gr.update()
 
             # Ease the bar toward this frame's quality so it grows/recedes
             # smoothly instead of snapping.
