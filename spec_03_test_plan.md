@@ -195,13 +195,16 @@ Manual checklist; tick before any demo. Two people if possible — one signing, 
 - [ ] Language switch ASL → ISL works without restart; reference images update.
 - [ ] Webcam preview stays smooth — no freeze/spinner — over a sustained session; the quality bar updates continuously without backing up.
 - [ ] Quality bar grows/recedes smoothly (no jerkiness) and tracks red ≤ 40% → amber 41–75% → green > 75%, with the target line at 90%.
-- [ ] Sustained green above the 80% completion threshold for ~1 s reliably advances to the next letter.
+- [ ] When the quality bar reaches the 90% target, the **Next letter** button switches from grey/locked to lime/active; clicking it advances and re-locks the button for the next letter (advancement is manual, not automatic).
+- [ ] A detected hand is recognised end-to-end: the status shows a live prediction and the bar climbs — i.e. no silent stream (`on_frame` must not raise; watch the logs for `greenlet.error` or "Detection error").
 - [ ] Skip and Next buttons immediately repaint the reference image, quality bar, and status (not only after a webcam frame).
+- [ ] On page refresh the lesson restarts at letter A (reset by `initial_view`).
 - [ ] No hand visible: UI shows "show your hand to the camera" and the quality bar eases back toward 0% rather than holding a stale value.
 - [ ] Two different signers (different hand sizes, skin tones if possible) both achieve ≥ 80% letters in a single pass through the alphabet.
 - [ ] No console errors during a 10-minute session (`kubectl logs -n lab-p1 deploy/tutor-app`).
 - [ ] Network disconnected from internet: lab still runs (all images cached on nodes, everything is local).
-- [ ] UI renders with the intended palette: light-grey background, lime-green element borders, black text, amber used only for highlights and the quality bar's amber band. Terminal output scrolls within its fixed-height viewport rather than growing the page.
+- [ ] UI renders with the intended palette: light-grey body, lime-green element borders, black text, amber only for highlights / the quality bar's amber band. Black panels: the title bar (white 16pt text "Sign Language Tutor, Train your first vision model" with the Dell + NVIDIA logos pinned top-right), the language/lesson row, the terminal output, the command input, and the feedback status box.
+- [ ] Terminal output is black on load, scrolls within its fixed-height viewport (~20 lines) rather than growing the page, and auto-scrolls to the newest line after each command. The lime "Execute Command" button (and Enter) both run the typed command; the input accepts pasted multi-line commands.
 - [ ] Embedded terminal runs the full Module-2 command flow (extract → train → export → `trtexec` → `config.pbtxt`) locally in the tutor-app pod; the new ISL model is served by Triton afterwards.
 - [ ] Embedded terminal rejects a disallowed command (e.g. `kubectl delete pod`) with the helpful allowlist message, and truncates very long output at 500 lines.
 

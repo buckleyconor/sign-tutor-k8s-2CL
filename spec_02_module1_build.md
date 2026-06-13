@@ -390,6 +390,13 @@ class TritonClassifier:
         return resp.as_numpy("output")[0]
 ```
 
+> **Threading caveat.** `tritonclient.http` runs on `geventhttpclient`, whose
+> greenlet hub is bound to the thread that constructed the client. Because the
+> webcam stream dispatches `on_frame` across many Gradio worker threads, the
+> controller must hold **one `TritonClassifier` per thread** (`threading.local`,
+> §10.1) — a single shared instance raises `greenlet.error: cannot switch to a
+> different thread` and silently kills the stream.
+
 > **Exit criterion:** from a Python REPL inside `tutor-app`, calling `TritonClassifier` on a known-good landmark vector returns the correct letter with high confidence.
 
 ---
@@ -470,6 +477,13 @@ Gradio's `gr.Blocks` API gives precise control over layout. Use a top Row for th
 
 **Theme.** The UI is themed light-grey-background / lime-green borders / black text, with amber reserved for highlights. This is applied with a light `gr.Themes` base plus a small CSS override; the palette lives in one place so it can be retuned without touching layout code. The same stylesheet also fixes the terminal to a scrolling viewport (Bug 3) and styles the quality bar (§10.2).
 
+> A later cosmetic pass layers **black panels** on top of this base (via
+> `elem_id` hooks, all in `theme.py`): the title bar (white 16pt heading +
+> Dell/NVIDIA logos top-right), the language/lesson row, the terminal output,
+> the command input, and the feedback status box. The terminal also gets a lime
+> **"Execute Command"** button beside the input. The snippet below shows the
+> base palette; see `src/ui/theme.py` for the full current rule set.
+
 ```python
 # src/ui/theme.py
 import gradio as gr
@@ -516,7 +530,8 @@ THEME = gr.themes.Base(
 # src/ui/app.py (skeleton)
 import gradio as gr
 from src.registry import load_registry
-from src.lesson.controller import LessonController, render_quality_bar
+from src.lesson.controller import (LessonController, render_quality_bar,
+                                   render_progress, render_target_letter)
 from src.ui.theme import THEME, CSS
 from src.terminal.executor import run_command   # see §12
 
@@ -537,42 +552,74 @@ def build_app():
                 cam = gr.Image(sources=["webcam"], streaming=True,
                                label="Live feed")
             with gr.Column(scale=1):
-                target = gr.Image(label="Sign this letter", interactive=False)
+                target_letter = gr.HTML(render_target_letter("—"))  # "Target Letter: A"
+                target = gr.Image(label="Reference", interactive=False)
+                progress = gr.HTML(render_progress(0, 0))            # "Progress: ●●●ooo"
                 quality = gr.HTML(value=render_quality_bar(0.0))
-                status = gr.Markdown()
+                status = gr.Markdown("<-- Click the record button to begin!",
+                                     elem_id="feedback-status")
                 with gr.Row():
                     skip_btn = gr.Button("Skip")
-                    next_btn = gr.Button("Next letter")
+                    # Locked (grey) until the quality bar hits 90%, then it
+                    # latches active (lime); the user clicks it to advance.
+                    next_btn = gr.Button("Next letter", elem_id="next-letter-btn",
+                                         interactive=False)
         # Embedded terminal — bottom 25%, full width (Module 2 lab commands)
         with gr.Row():
             with gr.Column(elem_id="lab-terminal"):
                 term_out = gr.Code(label="Terminal", language="shell",
-                                   interactive=False, lines=10)
-                term_in = gr.Textbox(label="Command",
-                                     placeholder="python training/train_classifier.py ...")
-                term_in.submit(run_command, inputs=[term_in, term_out],
-                               outputs=[term_out, term_in])
+                                   interactive=False, lines=20,
+                                   elem_id="terminal-output")
+                with gr.Row():
+                    term_in = gr.Textbox(label="Enter your Commands here",
+                                         elem_id="command-input", lines=2,
+                                         max_lines=12, scale=8)  # multi-line paste
+                    exec_btn = gr.Button("Execute Command",
+                                         elem_id="execute-btn", scale=1)
+                # Enter and the button both run the command; a trailing .then(js)
+                # auto-scrolls the terminal to the newest line (see ui/app.py).
+                for trigger in (term_in.submit, exec_btn.click):
+                    trigger(run_command, inputs=[term_in, term_out],
+                            outputs=[term_out, term_in])
 
-        views = [target, quality, status]
-        # Throttle to a rate the MediaPipe+Triton pipeline can sustain and pin to
-        # one in-flight frame so the queue can't back up into a freeze. The frame
-        # is NOT echoed back to `cam` (the preview renders client-side).
-        cam.stream(controller.on_frame, inputs=[cam, lang], outputs=views,
-                   stream_every=0.2, concurrency_limit=1, concurrency_id="frame",
-                   show_progress="hidden")
-        # Paint the reference letter on load and on every navigation — no longer
-        # dependent on a webcam frame arriving first.
-        demo.load(controller.current_view, outputs=views)
-        lang.change(controller.on_language_change, inputs=lang, outputs=views)
-        skip_btn.click(controller.on_skip, outputs=views)
-        next_btn.click(controller.on_next, outputs=views)
+        # Navigation hooks own the reference panel + Next-button lock state.
+        nav_views = [target_letter, target, progress, quality, status, next_btn]
+        # The stream stays lightweight — quality bar, status, one-shot button
+        # unlock — and does NOT repaint the reference image (pushing a fresh
+        # image 5x/s kept the panel reloading-blank and starved Skip). The frame
+        # is not echoed back to `cam` either (the preview renders client-side).
+        stream_views = [quality, status, next_btn]
+        cam.stream(controller.on_frame, inputs=[cam, lang], outputs=stream_views,
+                   stream_every=0.15, concurrency_limit=30, concurrency_id="frame",
+                   time_limit=3600, show_progress="hidden")
+        # initial_view resets to letter A (refresh restarts the lesson) and shows
+        # the opening prompt; the others repaint the active letter on navigation.
+        demo.load(controller.initial_view, outputs=nav_views)
+        lang.change(controller.on_language_change, inputs=lang, outputs=nav_views)
+        skip_btn.click(controller.on_skip, outputs=nav_views)
+        next_btn.click(controller.on_next, outputs=nav_views)
     return demo
 
 if __name__ == "__main__":
-    build_app().launch(server_name="0.0.0.0", server_port=7860)
+    build_app().launch(server_name="0.0.0.0", server_port=7860, show_error=True)
 ```
 
-> **Why the throttle and lock matter.** MediaPipe's graph is not thread-safe, and the per-frame pipeline (MediaPipe + a blocking Triton HTTP call) is heavy. Left unthrottled with the frame echoed back into the webcam component, the Gradio queue backs up and the stream freezes/spins. The fix is three-fold: `concurrency_limit=1` + `stream_every=0.2` on the stream, a `threading.Lock` around `on_frame`/navigation in the controller, and dropping `cam` from the outputs.
+> **Why the concurrency, lock, and per-thread client matter.** The per-frame
+> pipeline (MediaPipe + a blocking Triton HTTP call) is heavy, and three things
+> are load-bearing:
+> - **`concurrency_limit=30` (NOT 1).** A streaming event holds its worker slot
+>   for the whole `time_limit` window; with `concurrency_limit=1` the webcam
+>   sends one frame then stalls ~30 s (perpetual spinner). It must be > 1 so
+>   frames flow continuously.
+> - **A `threading.Lock`** around `on_frame`/navigation in the controller, since
+>   on_frame now runs on many worker threads and MediaPipe + the smoother/scorer
+>   are shared mutable state.
+> - **A per-thread Triton client.** `tritonclient[http]` is built on
+>   `geventhttpclient`, whose greenlet hub is bound to the creating thread; a
+>   shared client called from another worker raises `greenlet.error: cannot
+>   switch to a different thread`, which Gradio reports as a silent stream
+>   "Error". The controller caches the client in `threading.local` (§9.1).
+> - **No reference image in the stream outputs**, and `cam` is not echoed back.
 
 ### 10.2 Quality-bar rendering
 
@@ -602,13 +649,19 @@ target_q = s_conf if s_idx == self._letter_idx else 0.0
 self._quality_ema += self._ema_alpha * (target_q * 100.0 - self._quality_ema)
 ```
 
-`TrafficLightScorer` (§9.2) is unchanged and still drives **completion** — the bar is a presentation layer over the same thresholds, so the scorer's unit tests are unaffected.
+**Advancement is manual.** Once the eased quality bar crosses the 90% target,
+the controller latches the **Next letter** button active (lime); the user clicks
+it to move on, and navigation re-locks it for the next letter. There is no
+automatic advance. `TrafficLightScorer` (§9.2) is retained — its unit tests
+still pass — but it no longer drives the live lesson flow; the 90% bar crossing
+is the single completion gate.
 
 ### 10.3 Performance considerations
 
 - Resize incoming webcam frames to 480p before MediaPipe — full HD is wasteful.
 - Drop frames if the inference call is still in flight; never queue.
-- Reuse the `HandTracker` and `TritonClassifier` instances across frames.
+- Reuse the `HandTracker` across frames; reuse the `TritonClassifier` **per
+  thread** (`threading.local`) — see §9.1 / §10.1 for the gevent reason.
 - Pre-load reference images into memory at startup (small enough to fit easily).
 
 > **Exit criterion:** end-to-end demo with ASL — load page, select ASL alphabet, sign a letter, see GREEN, advance. 25+ FPS sustained.

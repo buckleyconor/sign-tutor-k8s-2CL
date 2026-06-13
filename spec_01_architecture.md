@@ -127,7 +127,7 @@ The system is organised into five layers:
 6. Triton returns 26 class logits.
 7. Score smoother applies a rolling average over the last N frames to suppress jitter.
 8. Lesson controller compares smoothed prediction to target letter and emits a 0–100% quality score.
-9. Gradio renders the reference image + quality bar + feedback text. (The live webcam preview is rendered client-side; the processed frame is not echoed back to the feed — a landmark overlay remains a stretch goal.)
+9. Gradio updates the quality bar + feedback text (and, on the 90% crossing, unlocks the Next button). The reference image is painted by the navigation hooks, not the per-frame stream — the live webcam preview is rendered client-side, and the processed frame is not echoed back to the feed (a landmark overlay remains a stretch goal).
 
 ### 4.4 Multi-language design
 
@@ -230,7 +230,7 @@ Feedback is a continuous **0–100% quality bar** rather than a discrete light. 
 | 🟠 Amber | `41–75%` | Close — hold the sign more clearly. |
 | 🟢 Green | `> 75%` | Strong match. |
 
-**Completion** is governed by the same thresholds as before, applied to the smoothed confidence by `TrafficLightScorer` (retained as the completion engine): a letter is marked complete once `conf ≥ 0.80` AND `predicted == target` is sustained for ≥ 1.0 s, after which the lesson auto-advances. The bar reaching its 90% line is the visual cue that completion is imminent. Thresholds (amber/green cutoffs, hold time, smoothing window, and the bar's EMA factor) are configurable via a single YAML file so demos can be tuned to room lighting / camera quality without code changes.
+**Completion is manual, gated by the bar.** When the eased quality value crosses the **90% target**, the **Next letter** button latches active (lime green); the user clicks it to advance, and navigation re-locks it (grey) for the next letter. There is no automatic advance. `TrafficLightScorer` is retained (and unit-tested) but no longer drives the live flow — the 90% crossing is the single completion gate. Thresholds (the 90% unlock, smoothing window, and the bar's EMA factor) are configurable via a single YAML file so demos can be tuned to room lighting / camera quality without code changes.
 
 > The bar's colour cutoffs (40/75) are a *visual* mapping; the *completion* cutoffs (0.50/0.80) are the scorer's — they are intentionally separate.
 
@@ -244,7 +244,7 @@ Raw frame-by-frame predictions jitter heavily. The UI uses a 15-frame (~0.5 s) r
 2. User selects a lesson (Module 1: Alphabet; Module 2: Words).
 3. System presents target sign with reference image.
 4. User signs; the quality bar updates in real time.
-5. On sustained GREEN, system advances to next target.
+5. When the bar reaches the 90% target, the **Next letter** button unlocks; the user clicks it to advance to the next target.
 6. Session ends after the full lesson; summary screen shows per-letter best score.
 
 ### 6.5 Terminal Security Model

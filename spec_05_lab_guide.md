@@ -77,7 +77,7 @@ Open a browser on the lab workstation and navigate to:
 https://p1.lab.internal
 ```
 
-You should see the sign-language tutor UI with ASL selected — light-grey background, lime-green borders, black text, with an embedded terminal across the bottom. Sign a letter (the reference image shows you how). The quality bar should climb into the green when you match.
+You should see the sign-language tutor UI with ASL selected — a black title bar ("Sign Language Tutor, Train your first vision model", Dell + NVIDIA logos top-right), a light-grey body with lime-green borders and black text, and an embedded terminal across the bottom. Click the webcam **record** button to start the live feed, then sign a letter (the reference image shows you how). The quality bar should climb into the green when you match, and reaching 90% unlocks the **Next letter** button.
 
 > ✅ **Checkpoint:** ASL recognition works.
 
@@ -399,7 +399,7 @@ The language dropdown lists both American Sign Language and Irish Sign Language 
 
 ### 8.2 Sign a few letters
 
-Use the reference image as guidance. Hold each sign clearly and steadily for 1–2 seconds. The quality bar should rise as the model's confidence grows — the bar only turns green when the model consistently predicts the target letter above the **80%** confidence threshold (the green cutoff in `configs/thresholds.yaml`).
+Use the reference image as guidance. Hold each sign clearly and steadily for 1–2 seconds. The quality bar rises as the model's confidence grows and turns green on a strong match. When it reaches the **90% target line**, the **Next letter** button turns lime green — click it to move to the next letter. (Thresholds live in `configs/thresholds.yaml`.)
 
 > 💡 **Tip:** The smoother accumulates predictions over 15 frames (about 3 seconds at the streaming rate). Hold the sign steady rather than moving — the system is looking for consistency, not speed.
 
