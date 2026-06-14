@@ -9,6 +9,16 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Gradio's queue delivers results over a long-lived SSE stream
+    # (GET /gradio_api/queue/data, text/event-stream). nginx buffers proxied
+    # responses by default, which holds the SSE events instead of flushing them
+    # — the browser joins the queue, never receives `process_completed`, and the
+    # webcam stalls in a "waiting" spinner after a single frame. Disabling
+    # response buffering (and forcing HTTP/1.1) lets events stream through in
+    # real time. Required on proxies that ignore Gradio's X-Accel-Buffering: no.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   tls:
