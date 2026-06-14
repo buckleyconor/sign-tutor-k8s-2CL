@@ -22,6 +22,19 @@ spec:
         - name: tutor-app
           image: {{ .Values.images.tutorApp }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
+          # Hardening for the web-exposed embedded terminal (runs arbitrary
+          # commands server-side, src/terminal/executor.py). The container still
+          # runs as root so the lab's writes to /app (datasets/, checkpoints/,
+          # languages/) and the /models PVC keep working — but it can no longer
+          # escalate privileges or use any Linux capability, shrinking the blast
+          # radius of a terminal escape. Full runAsNonRoot is deferred: it needs
+          # Dockerfile chown + PVC fsGroup + a GPU/EGL run validated on-cluster.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - { name: NAMESPACE, value: {{ $ns | quote }} }
             - { name: TRITON_URL, value: "triton:{{ .Values.triton.httpPort }}" }
